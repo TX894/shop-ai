@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMaskedKeys, updateKeys } from "@/lib/settings";
+import { ensureMigrations } from "@/lib/migrate";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  await ensureMigrations();
   const keys = await getMaskedKeys();
   return NextResponse.json({ keys });
 }
