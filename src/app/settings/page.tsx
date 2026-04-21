@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Header from "@/components/Header";
 
 interface KeyInfo {
   set: boolean;
@@ -96,13 +96,14 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-stone-50">
+    <>
+    <Header />
+    <main className="min-h-screen bg-stone-50 dark:bg-stone-950">
       <div className="max-w-2xl mx-auto p-6 md:p-10">
-        <header className="mb-8">
-          <Link href="/" className="text-sm text-stone-500 hover:text-stone-800 mb-3 inline-block">← Dashboard</Link>
-          <h1 className="text-2xl font-medium text-stone-800">Settings</h1>
-          <p className="text-sm text-stone-500 mt-1">Manage API keys and connections.</p>
-        </header>
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Settings</h1>
+          <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">Manage API keys and connections.</p>
+        </div>
 
         <div className="space-y-6">
           {KEY_CONFIG.map(({ key, label, service, isPlain }) => {
@@ -111,7 +112,7 @@ export default function SettingsPage() {
             const isVisible = showValues[key];
 
             return (
-              <div key={key} className="bg-white border border-stone-200 rounded-lg p-4">
+              <div key={key} className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm font-medium text-stone-800">{label}</p>
@@ -155,8 +156,8 @@ export default function SettingsPage() {
           })}
 
           {/* Test connections */}
-          <div className="bg-white border border-stone-200 rounded-lg p-4">
-            <p className="text-sm font-medium text-stone-800 mb-3">Test connections</p>
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-4">
+            <p className="text-sm font-medium text-stone-900 dark:text-stone-100 mb-3">Test connections</p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={testShopify}
@@ -187,7 +188,7 @@ export default function SettingsPage() {
             <button
               onClick={handleSave}
               disabled={saving || Object.values(values).every((v) => !v.trim())}
-              className="bg-stone-800 text-white px-6 py-2.5 rounded text-sm hover:bg-stone-900 disabled:opacity-50"
+              className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
               {saving ? "Saving..." : "Save changes"}
             </button>
@@ -196,5 +197,6 @@ export default function SettingsPage() {
         </div>
       </div>
     </main>
+    </>
   );
 }

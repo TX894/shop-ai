@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ShopifyProduct, ScanResponse } from "@/types/shopify";
 import ImportModal from "@/components/ImportModal";
+import Header from "@/components/Header";
 
 const PLATFORMS = [
   { name: "Shopify", active: true },
@@ -81,27 +82,23 @@ export default function ScanPage() {
   }
 
   return (
-    <main className="min-h-screen bg-stone-50">
+    <>
+    <Header />
+    <main className="min-h-screen bg-stone-50 dark:bg-stone-950">
       <div className="max-w-7xl mx-auto p-6 md:p-10">
-        {/* Nav */}
-        <nav className="mb-8 flex items-center gap-4">
-          <Link href="/" className="text-sm text-stone-500 hover:text-stone-800">← Dashboard</Link>
-          <Link href="/library" className="text-sm text-stone-500 hover:text-stone-800">Library</Link>
-        </nav>
-
         <div className="flex gap-8">
           {/* LEFT — Main area (70%) */}
           <div className="flex-1 min-w-0">
             {/* Header */}
             <div className="mb-6">
-              <h1 className="text-2xl font-semibold text-stone-800">Copy multi-product</h1>
-              <p className="text-sm text-stone-500 mt-1">
+              <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Copy multi-product</h1>
+              <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
                 Copy a list of products from any Shopify store with a single click.
               </p>
             </div>
 
             {/* URL input */}
-            <div className="bg-white rounded-lg border border-stone-200 p-4 mb-6">
+            <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-4 mb-6">
               <div className="flex gap-3">
                 <input
                   type="text"
@@ -109,7 +106,7 @@ export default function ScanPage() {
                   onChange={(e) => setStoreUrl(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleScan()}
                   placeholder="https://store.myshopify.com or /collections/..."
-                  className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+                  className="flex-1 px-4 py-2.5 border border-stone-300 dark:border-stone-700 rounded-xl text-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder:text-stone-400"
                 />
                 <div className="relative">
                   <select disabled className="appearance-none px-3 py-2.5 border border-stone-200 rounded-lg text-sm bg-stone-50 text-stone-400 pr-8 cursor-not-allowed">
@@ -121,7 +118,7 @@ export default function ScanPage() {
                   type="button"
                   onClick={handleScan}
                   disabled={scanning || !storeUrl.trim()}
-                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap transition-colors"
                 >
                   {scanning ? "Loading..." : "Load Products"}
                 </button>
@@ -171,10 +168,10 @@ export default function ScanPage() {
                       <div
                         key={p.handle}
                         onClick={() => toggleProduct(p.handle)}
-                        className={`relative bg-white rounded-lg border cursor-pointer overflow-hidden transition ${
+                        className={`relative bg-white dark:bg-stone-900 rounded-2xl border cursor-pointer overflow-hidden transition-all hover:shadow-md ${
                           isSelected
                             ? "border-indigo-500 ring-2 ring-indigo-500"
-                            : "border-stone-200 hover:border-stone-400"
+                            : "border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700"
                         }`}
                       >
                         {/* Checkbox */}
@@ -219,7 +216,7 @@ export default function ScanPage() {
           {/* RIGHT — Sidebar (30%) */}
           <div className="hidden lg:block w-64 flex-shrink-0">
             <div className="sticky top-6">
-              <div className="bg-white border border-stone-200 rounded-lg p-4">
+              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-4">
                 <h3 className="text-xs font-medium text-stone-500 uppercase tracking-wide mb-3">
                   Supported platforms
                 </h3>
@@ -262,5 +259,6 @@ export default function ScanPage() {
         sourceStore={scannedDomain}
       />
     </main>
+    </>
   );
 }

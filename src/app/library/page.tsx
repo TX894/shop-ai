@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import Header from "@/components/Header";
+import { SkeletonGrid } from "@/components/Skeleton";
 
 interface LibraryItem {
   id: string;
@@ -237,14 +239,15 @@ export default function LibraryPage() {
   const selected = items.find((i) => i.id === selectedId);
 
   return (
-    <main className="min-h-screen bg-stone-50">
+    <>
+    <Header />
+    <main className="min-h-screen bg-stone-50 dark:bg-stone-950">
       <div className="max-w-6xl mx-auto p-6 md:p-10">
-        <header className="mb-6 flex items-start justify-between">
+        <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-medium text-stone-800">Library</h1>
-            <p className="text-sm text-stone-500 mt-1">
-              {total} imagem{total !== 1 ? "s" : ""} guardada
-              {total !== 1 ? "s" : ""}
+            <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Library</h1>
+            <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
+              {total} image{total !== 1 ? "s" : ""} saved
             </p>
           </div>
           <div className="flex gap-2">
@@ -254,26 +257,20 @@ export default function LibraryPage() {
                   setSelectMode(!selectMode);
                   if (selectMode) setCheckedIds(new Set());
                 }}
-                className={`text-sm px-3 py-2 rounded border ${
+                className={`text-sm px-3 py-2 rounded-xl border transition-colors ${
                   selectMode
-                    ? "bg-stone-800 text-white border-stone-800"
-                    : "border-stone-300 text-stone-600 hover:border-stone-500"
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "border-stone-300 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:border-stone-500"
                 }`}
               >
-                {selectMode ? "Cancelar seleção" : "Selecionar"}
+                {selectMode ? "Cancel selection" : "Select"}
               </button>
             )}
-            <Link
-              href="/"
-              className="text-sm px-3 py-2 border border-stone-300 rounded hover:border-stone-500 text-stone-600 hover:text-stone-900"
-            >
-              ← Voltar
-            </Link>
           </div>
-        </header>
+        </div>
 
         {/* Shopify connection test */}
-        <div className="mb-6 bg-white border border-stone-200 rounded-lg p-4">
+        <div className="mb-6 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-stone-700">
@@ -335,9 +332,7 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {loading && (
-          <div className="text-stone-500 text-sm">A carregar...</div>
-        )}
+        {loading && <SkeletonGrid count={10} />}
 
         {!loading && items.length === 0 && (
           <div className="text-center py-20 text-stone-400">
@@ -664,10 +659,10 @@ export default function LibraryPage() {
               return (
                 <div
                   key={item.id}
-                  className={`group relative bg-white rounded-lg border overflow-hidden cursor-pointer transition-shadow ${
+                  className={`group relative bg-white dark:bg-stone-900 rounded-2xl border overflow-hidden cursor-pointer transition-all hover:shadow-md ${
                     isChecked
-                      ? "border-stone-800 ring-2 ring-stone-800"
-                      : "border-stone-200 hover:shadow-md"
+                      ? "border-indigo-500 ring-2 ring-indigo-500"
+                      : "border-stone-200 dark:border-stone-800"
                   }`}
                   onClick={() => {
                     if (selectMode) {
@@ -767,5 +762,6 @@ export default function LibraryPage() {
         )}
       </div>
     </main>
+    </>
   );
 }

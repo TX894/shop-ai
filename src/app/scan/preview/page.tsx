@@ -3,6 +3,7 @@
 import { useEffect, useReducer, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Header from "@/components/Header";
 import type { ImportOptions } from "@/types/import";
 import type { PreviewProduct, PreviewImage, PreviewState } from "@/components/preview/types";
 import { previewReducer } from "@/components/preview/types";
@@ -523,17 +524,20 @@ function PreviewInner() {
 
 export default function PreviewPage() {
   return (
-    <main className="min-h-screen bg-stone-50">
+    <>
+    <Header />
+    <main className="min-h-screen bg-stone-50 dark:bg-stone-950">
       <div className="max-w-5xl mx-auto p-6 md:p-10">
-        <header className="mb-6">
-          <Link href="/scan" className="text-sm text-stone-500 hover:text-stone-800 mb-3 inline-block">← Back to scan</Link>
-          <h1 className="text-2xl font-semibold text-stone-800">Preview Import</h1>
-          <p className="text-sm text-stone-500 mt-1">Review, edit and approve before importing to Shopify.</p>
-        </header>
+        <div className="mb-6">
+          <Link href="/scan" className="text-sm text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 mb-3 inline-block">← Back to scan</Link>
+          <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Preview Import</h1>
+          <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">Review, edit and approve before importing to Shopify.</p>
+        </div>
         <Suspense fallback={<div className="text-center py-16 text-stone-500 text-sm">Loading...</div>}>
           <PreviewInner />
         </Suspense>
       </div>
     </main>
+    </>
   );
 }

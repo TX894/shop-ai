@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import Uploader, { UploadedImage } from "@/components/Uploader";
+import Header from "@/components/Header";
 import PresetSelector from "@/components/PresetSelector";
 import QueueItem from "@/components/QueueItem";
 import Results from "@/components/Results";
@@ -139,38 +139,16 @@ export default function Home() {
     .filter((r): r is ProcessResultItem => r !== undefined);
 
   return (
-    <main className="min-h-screen bg-stone-50">
+    <>
+    <Header />
+    <main className="min-h-screen bg-stone-50 dark:bg-stone-950">
       <div className="max-w-5xl mx-auto p-6 md:p-10">
-        <header className="mb-8 flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-medium text-stone-800">Shop AI</h1>
-            <p className="text-sm text-stone-500 mt-1">
-              Carrega imagens de produto, escolhe o preset da marca, aplica o
-              estilo.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link
-              href="/library"
-              className="text-sm px-3 py-2 border border-stone-300 rounded hover:border-stone-500 text-stone-600 hover:text-stone-900 whitespace-nowrap"
-            >
-              Library
-            </Link>
-            <Link
-              href="/scan"
-              className="text-sm px-3 py-2 border border-stone-300 rounded hover:border-stone-500 text-stone-600 hover:text-stone-900 whitespace-nowrap"
-            >
-              Scan competitor →
-            </Link>
-            <Link
-              href="/settings"
-              className="text-sm px-3 py-2 border border-stone-300 rounded hover:border-stone-500 text-stone-600 hover:text-stone-900 whitespace-nowrap"
-              title="Settings"
-            >
-              ⚙
-            </Link>
-          </div>
-        </header>
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Image Studio</h1>
+          <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
+            Upload product images, choose a brand preset, apply the style.
+          </p>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="md:col-span-2 space-y-4">
@@ -192,7 +170,7 @@ export default function Home() {
           </div>
 
           <div className="space-y-5">
-            <div className="bg-white p-4 rounded-lg border border-stone-200">
+            <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-stone-200 dark:border-stone-800">
               <PresetSelector
                 presets={presets}
                 selectedId={selectedPresetId}
@@ -231,7 +209,7 @@ export default function Home() {
               type="button"
               onClick={handleProcess}
               disabled={processing || images.length === 0}
-              className="w-full bg-stone-800 text-white py-3 rounded hover:bg-stone-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {processing
                 ? `A processar…`
@@ -264,5 +242,6 @@ export default function Home() {
         />
       </div>
     </main>
+    </>
   );
 }
