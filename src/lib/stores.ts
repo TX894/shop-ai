@@ -18,6 +18,9 @@ export interface Store {
   access_token: string | null;
   token_expires_at: string | null;
   is_active: boolean;
+  character_reference_url: string | null;
+  character_description: string | null;
+  gallery_default_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +37,9 @@ export interface UpdateStoreInput {
   domain?: string;
   client_id?: string;
   client_secret?: string;
+  character_reference_url?: string | null;
+  character_description?: string | null;
+  gallery_default_count?: number;
 }
 
 // ---------- Backend detection ----------
@@ -66,11 +72,19 @@ const CREATE_ACTIVE_INDEX_PG = `
 
 let _pgStoresMigrated = false;
 
+const ALTER_STORES_GALLERY_PG = `
+  ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS character_reference_url TEXT,
+    ADD COLUMN IF NOT EXISTS character_description TEXT,
+    ADD COLUMN IF NOT EXISTS gallery_default_count INT DEFAULT 4
+`;
+
 async function ensurePgStoresSchema(): Promise<void> {
   if (_pgStoresMigrated) return;
   const { sql } = await import("@vercel/postgres");
   await sql.query(CREATE_STORES_TABLE_PG);
   await sql.query(CREATE_ACTIVE_INDEX_PG);
+  await sql.query(ALTER_STORES_GALLERY_PG);
   _pgStoresMigrated = true;
 }
 
@@ -107,6 +121,9 @@ function rowToStore(row: Record<string, unknown>): Store {
     access_token: row.access_token ? String(row.access_token) : null,
     token_expires_at: row.token_expires_at ? String(row.token_expires_at) : null,
     is_active: Boolean(row.is_active),
+    character_reference_url: row.character_reference_url ? String(row.character_reference_url) : null,
+    character_description: row.character_description ? String(row.character_description) : null,
+    gallery_default_count: Number(row.gallery_default_count ?? 4),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -178,6 +195,9 @@ export async function createStore(input: CreateStoreInput): Promise<Store> {
     access_token: null,
     token_expires_at: null,
     is_active: false,
+    character_reference_url: null,
+    character_description: null,
+    gallery_default_count: 4,
     created_at: now,
     updated_at: now,
   };
@@ -218,6 +238,18 @@ export async function updateStore(
       values.push(input.client_secret);
       sets.push("access_token = NULL, token_expires_at = NULL");
     }
+    if (input.character_reference_url !== undefined) {
+      sets.push(`character_reference_url = $${idx++}`);
+      values.push(input.character_reference_url);
+    }
+    if (input.character_description !== undefined) {
+      sets.push(`character_description = $${idx++}`);
+      values.push(input.character_description);
+    }
+    if (input.gallery_default_count !== undefined) {
+      sets.push(`gallery_default_count = $${idx++}`);
+      values.push(input.gallery_default_count);
+    }
 
     values.push(id);
     const result = await sql.query(
@@ -245,6 +277,9 @@ export async function updateStore(
     store.access_token = null;
     store.token_expires_at = null;
   }
+  if (input.character_reference_url !== undefined) store.character_reference_url = input.character_reference_url;
+  if (input.character_description !== undefined) store.character_description = input.character_description;
+  if (input.gallery_default_count !== undefined) store.gallery_default_count = input.gallery_default_count;
   store.updated_at = new Date().toISOString();
   stores[idx] = store;
   fileWriteStores(stores);
