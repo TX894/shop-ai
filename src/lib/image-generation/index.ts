@@ -24,7 +24,12 @@ export interface GenerateImageArgs {
   /** Base64-encoded source image for editing models */
   sourceImageBase64?: string;
   sourceMimeType?: string;
+  /** Base64-encoded reference image (e.g. character/face reference) for multi-image models */
+  referenceImageBase64?: string;
+  referenceMimeType?: string;
   aspectRatio?: string;
+  /** Fallback model slug if primary fails */
+  fallbackModelSlug?: string;
 }
 
 export interface GenerateImageResult {
@@ -62,23 +67,51 @@ export async function generateImage(
   const startTime = Date.now();
   const apiKey = await getApiKey();
 
-  let resultUrl: string;
+  try {
+    const resultUrl = await runModel(model, args, apiKey);
+    const { imageBase64, mimeType } = await downloadAsBase64(resultUrl);
 
-  if (model.endpointType === "flux") {
-    resultUrl = await runFluxModel(model, args, apiKey);
-  } else {
-    resultUrl = await runStandardModel(model, args, apiKey);
+    return {
+      imageBase64,
+      mimeType,
+      modelUsed: model.slug,
+      creditsUsed: model.creditsPerImage,
+      processingTimeMs: Date.now() - startTime,
+    };
+  } catch (err) {
+    // Fallback: if a fallback model is specified and different from primary, try it
+    if (args.fallbackModelSlug && args.fallbackModelSlug !== slug) {
+      const fallbackModel = getModel(args.fallbackModelSlug);
+      if (fallbackModel) {
+        console.log(
+          `[generateImage] Fallback: ${slug} failed, trying ${args.fallbackModelSlug}. ` +
+          `Error: ${err instanceof Error ? err.message : err}`
+        );
+        const resultUrl = await runModel(fallbackModel, args, apiKey);
+        const { imageBase64, mimeType } = await downloadAsBase64(resultUrl);
+
+        return {
+          imageBase64,
+          mimeType,
+          modelUsed: `${fallbackModel.slug} (fallback from ${slug})`,
+          creditsUsed: fallbackModel.creditsPerImage,
+          processingTimeMs: Date.now() - startTime,
+        };
+      }
+    }
+    throw err;
   }
+}
 
-  const { imageBase64, mimeType } = await downloadAsBase64(resultUrl);
-
-  return {
-    imageBase64,
-    mimeType,
-    modelUsed: model.slug,
-    creditsUsed: model.creditsPerImage,
-    processingTimeMs: Date.now() - startTime,
-  };
+async function runModel(
+  model: ImageModel,
+  args: GenerateImageArgs,
+  apiKey: string
+): Promise<string> {
+  if (model.endpointType === "flux") {
+    return runFluxModel(model, args, apiKey);
+  }
+  return runStandardModel(model, args, apiKey);
 }
 
 // ---------- Standard endpoint models ----------
@@ -100,13 +133,22 @@ async function runStandardModel(
     const imageUrl = await uploadImage(imageBase64, mimeType, apiKey);
 
     if (model.kieModelId === "google/nano-banana-edit") {
-      // nano-banana-edit uses image_urls array
+      // nano-banana-edit uses image_urls array (single image only)
       input.image_urls = [imageUrl];
       input.output_format = "png";
       if (args.aspectRatio) input.image_size = args.aspectRatio;
     } else {
-      // nano-banana-2 and nano-banana-pro use image_input array
-      input.image_input = [imageUrl];
+      // nano-banana-2 and nano-banana-pro use image_input array (multi-image capable)
+      const imageInputs = [imageUrl];
+
+      // Add reference image (character ref) if model supports multi-image
+      if (model.supportsMultiImage && args.referenceImageBase64 && args.referenceMimeType) {
+        const ref = await ensurePng(args.referenceImageBase64, args.referenceMimeType);
+        const refUrl = await uploadImage(ref.imageBase64, ref.mimeType, apiKey);
+        imageInputs.push(refUrl);
+      }
+
+      input.image_input = imageInputs;
       input.output_format = "png";
       if (args.aspectRatio) input.aspect_ratio = args.aspectRatio;
       else input.aspect_ratio = "auto";

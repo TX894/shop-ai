@@ -28,6 +28,7 @@ export interface ImageModel {
   kieModelId: string;
   endpointType: "standard" | "flux";
   supportsEditing: boolean;
+  supportsMultiImage: boolean;
   description: string;
   creditsPerImage: number;
 }
@@ -39,6 +40,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "google/nano-banana-edit",
     endpointType: "standard",
     supportsEditing: true,
+    supportsMultiImage: false,
     description: "Fast image editing via Gemini 2.5 Flash. Best for quick background/style swaps.",
     creditsPerImage: 4,
   },
@@ -48,16 +50,18 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "nano-banana-2",
     endpointType: "standard",
     supportsEditing: true,
-    description: "Next-gen Gemini editing. Supports up to 4K and 14 reference images.",
+    supportsMultiImage: true,
+    description: "Next-gen Gemini editing. Up to 4K, 14 reference images.",
     creditsPerImage: 8,
   },
   {
     slug: "nano-banana-pro",
-    displayName: "Nano Banana Pro",
+    displayName: "Nano Banana Pro (Character)",
     kieModelId: "nano-banana-pro",
     endpointType: "standard",
     supportsEditing: true,
-    description: "Premium Gemini editing. Up to 4K, 8 reference images, best prompt adherence.",
+    supportsMultiImage: true,
+    description: "Premium editing with multi-image input. Product + character reference for in-hand/on-model shots.",
     creditsPerImage: 12,
   },
   {
@@ -66,6 +70,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "flux-kontext-pro",
     endpointType: "flux",
     supportsEditing: true,
+    supportsMultiImage: false,
     description: "High-fidelity image editing. Excellent at preserving product details.",
     creditsPerImage: 10,
   },
@@ -75,6 +80,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "flux-kontext-max",
     endpointType: "flux",
     supportsEditing: true,
+    supportsMultiImage: false,
     description: "Maximum quality Flux editing. Best for hero shots needing perfection.",
     creditsPerImage: 20,
   },
@@ -84,6 +90,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "google/imagen4",
     endpointType: "standard",
     supportsEditing: false,
+    supportsMultiImage: false,
     description: "Google Imagen 4 text-to-image. Great quality, no editing support.",
     creditsPerImage: 10,
   },
@@ -93,6 +100,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "google/imagen4-ultra",
     endpointType: "standard",
     supportsEditing: false,
+    supportsMultiImage: false,
     description: "Premium Imagen 4. Best prompt adherence, highest quality generation.",
     creditsPerImage: 20,
   },
@@ -102,6 +110,7 @@ export const IMAGE_MODELS: ImageModel[] = [
     kieModelId: "bytedance/seedream-v4-text-to-image",
     endpointType: "standard",
     supportsEditing: false,
+    supportsMultiImage: false,
     description: "ByteDance Seedream 4.0. Fast 2K generation, editorial product photography.",
     creditsPerImage: 8,
   },

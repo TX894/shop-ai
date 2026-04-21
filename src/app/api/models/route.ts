@@ -15,6 +15,7 @@ export async function GET(req: Request) {
       displayName: m.displayName,
       description: m.description,
       supportsEditing: m.supportsEditing,
+      supportsMultiImage: m.supportsMultiImage,
       creditsPerImage: m.creditsPerImage,
     })),
   });
