@@ -49,7 +49,12 @@ export async function POST(req: NextRequest) {
         handle,
         sourceStore: body.source_store,
       })),
-      options: JSON.stringify(body.options ?? {}),
+      options: JSON.stringify({
+        ...body.options,
+        mode: "gallery",
+        source_store: body.source_store,
+        slot_count: body.gallery_template.length,
+      }),
     });
 
     // Create drafts and slots for each product
