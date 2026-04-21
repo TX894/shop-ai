@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore, updateStore } from "@/lib/stores";
-import { saveImage, deleteImage } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/jpg"]);
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/jpg", "image/webp"]);
 
 export async function POST(
   req: NextRequest,
@@ -16,6 +15,13 @@ export async function POST(
   const store = await getStore(id);
   if (!store) {
     return NextResponse.json({ error: "Store not found" }, { status: 404 });
+  }
+
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return NextResponse.json(
+      { error: "Vercel Blob not configured — set BLOB_READ_WRITE_TOKEN in environment variables" },
+      { status: 500 }
+    );
   }
 
   try {
@@ -29,7 +35,7 @@ export async function POST(
 
     if (!ALLOWED_TYPES.has(file.type)) {
       return NextResponse.json(
-        { error: "Only JPG and PNG files are accepted" },
+        { error: "Only JPG, PNG and WebP files are accepted" },
         { status: 400 }
       );
     }
@@ -42,21 +48,27 @@ export async function POST(
     }
 
     // Delete old reference if exists
-    if (store.character_reference_url) {
-      try { await deleteImage(store.character_reference_url); } catch { /* ignore */ }
+    if (store.character_reference_url?.startsWith("https://")) {
+      try {
+        const { del } = await import("@vercel/blob");
+        await del(store.character_reference_url);
+      } catch { /* ignore — old blob may already be gone */ }
     }
 
-    // Save new reference
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const base64 = buffer.toString("base64");
-    const url = await saveImage(base64, file.type, `character-ref-${id}`);
+    // Upload directly to Vercel Blob (never filesystem)
+    const { put } = await import("@vercel/blob");
+    const blob = await put(
+      `character-refs/${id}/${Date.now()}-${file.name}`,
+      file,
+      { access: "public", contentType: file.type }
+    );
 
     await updateStore(id, {
-      character_reference_url: url,
+      character_reference_url: blob.url,
       character_description: description || null,
     });
 
-    return NextResponse.json({ url });
+    return NextResponse.json({ url: blob.url });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Upload failed" },
@@ -76,8 +88,11 @@ export async function DELETE(
     return NextResponse.json({ error: "Store not found" }, { status: 404 });
   }
 
-  if (store.character_reference_url) {
-    try { await deleteImage(store.character_reference_url); } catch { /* ignore */ }
+  if (store.character_reference_url?.startsWith("https://")) {
+    try {
+      const { del } = await import("@vercel/blob");
+      await del(store.character_reference_url);
+    } catch { /* ignore */ }
   }
 
   await updateStore(id, {

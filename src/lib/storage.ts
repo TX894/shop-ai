@@ -19,7 +19,10 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
-/** Returns a Blob URL (production) or local filename (dev) */
+/**
+ * Returns a Blob URL (production) or local filename (dev).
+ * In production (Vercel), BLOB_READ_WRITE_TOKEN must be set — filesystem is read-only.
+ */
 export async function saveImage(base64: string, mime: string, prefix: string): Promise<string> {
   if (useBlob()) {
     const { put } = await import("@vercel/blob");
@@ -33,7 +36,15 @@ export async function saveImage(base64: string, mime: string, prefix: string): P
     return blob.url;
   }
 
-  // Local filesystem
+  // Detect Vercel serverless (read-only filesystem) without Blob configured
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Image upload failed: BLOB_READ_WRITE_TOKEN is not set. " +
+      "Add it via Vercel Dashboard > Storage > Connect Blob Store."
+    );
+  }
+
+  // Local filesystem (dev only)
   const fs = await import("fs");
   const path = await import("path");
   const IMAGES_DIR = path.join(process.cwd(), "data", "images");

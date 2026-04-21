@@ -31,12 +31,38 @@ These have been migrated to the DB and are no longer read by the app:
 
 **Note:** On first request after deploy, the auto-migration will copy these values from env vars into the DB. Only remove them AFTER confirming the migration ran (check /settings — your store should appear in the list).
 
-## Env vars that MUST stay in Vercel
+## Required env vars in Vercel
 
-- `POSTGRES_URL` (and the 5 related: `POSTGRES_URL_NON_POOLING`, `POSTGRES_USER`, `POSTGRES_HOST`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`)
-- `ANTHROPIC_KEY`
-- `APP_PASSWORD`
-- `BLOB_READ_WRITE_TOKEN`
+All of these MUST be set in Vercel for the app to function:
+
+| Variable | Purpose | How to get it |
+|---|---|---|
+| `POSTGRES_URL` | Database connection (pooled) | Vercel Dashboard > Storage > Neon Postgres |
+| `POSTGRES_URL_NON_POOLING` | Database connection (direct) | Same as above |
+| `POSTGRES_USER` | Database user | Same as above |
+| `POSTGRES_HOST` | Database host | Same as above |
+| `POSTGRES_PASSWORD` | Database password | Same as above |
+| `POSTGRES_DATABASE` | Database name | Same as above |
+| `ANTHROPIC_KEY` | Claude API for translations | Anthropic Console > API Keys |
+| `APP_PASSWORD` | Login password for the app | Choose any strong password |
+| `BLOB_READ_WRITE_TOKEN` | **Image uploads** (required!) | See setup instructions below |
+
+### Setting up BLOB_READ_WRITE_TOKEN
+
+This token is **required** for all image uploads (product images, character references, AI results). Without it, uploads fail with "BLOB_READ_WRITE_TOKEN is not set".
+
+1. Go to **Vercel Dashboard > your project (shop-ai)**
+2. Click **Storage** tab in the top nav
+3. Click **Connect Store** > **Blob** > **Create New**
+4. Name it (e.g. "shop-ai-images") and click **Create**
+5. Vercel automatically adds `BLOB_READ_WRITE_TOKEN` to your env vars
+6. **Redeploy** for the change to take effect
+
+If you already have a Blob store, go to Settings > Environment Variables and verify `BLOB_READ_WRITE_TOKEN` is present.
+
+### Note on filesystem
+
+All uploads use Vercel Blob in production. The filesystem is never written to in production — it is read-only on Vercel serverless. Local dev falls back to `data/images/` only when `BLOB_READ_WRITE_TOKEN` is not set.
 
 ## Test steps (post-deploy)
 
