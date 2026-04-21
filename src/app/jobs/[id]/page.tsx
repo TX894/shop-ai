@@ -15,13 +15,24 @@ interface ProductStatus {
   aiGenerated: boolean;
 }
 
+interface SlotStatus {
+  handle: string;
+  slot_order: number;
+  shot_type: string;
+  status: string;
+  model_slug: string;
+  error?: string;
+}
+
 interface JobStatus {
   id: string;
   status: "pending" | "processing" | "done" | "failed";
+  mode?: "gallery" | "legacy";
   total_products: number;
   completed_products: number;
   failed_products: number;
   products: ProductStatus[];
+  slots?: SlotStatus[];
   created_at: string;
   updated_at: string;
 }
@@ -236,26 +247,50 @@ export default function JobPage() {
 
           {/* Product list */}
           <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl divide-y divide-stone-100 dark:divide-stone-800 overflow-hidden mb-6">
-            {job.products.map((p) => (
-              <div key={p.handle} className="flex items-center gap-3 px-4 py-3">
-                <span className="text-base flex-shrink-0">{STATUS_ICONS[p.status] ?? ""}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-stone-800 dark:text-stone-200 truncate">{p.title || p.handle}</p>
-                  {p.status === "done" && (
-                    <p className="text-xs text-stone-400">
-                      {p.imageCount} image{p.imageCount !== 1 ? "s" : ""}{p.aiGenerated ? " (AI)" : ""}
-                    </p>
+            {job.products.map((p) => {
+              const productSlots = job.mode === "gallery" && job.slots
+                ? job.slots.filter((s) => s.handle === p.handle)
+                : [];
+
+              return (
+                <div key={p.handle} className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-base flex-shrink-0">{STATUS_ICONS[p.status] ?? ""}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-stone-800 dark:text-stone-200 truncate">{p.title || p.handle}</p>
+                      {p.status === "done" && !productSlots.length && (
+                        <p className="text-xs text-stone-400">
+                          {p.imageCount} image{p.imageCount !== 1 ? "s" : ""}{p.aiGenerated ? " (AI)" : ""}
+                        </p>
+                      )}
+                      {p.error && <p className="text-xs text-red-500 dark:text-red-400 truncate">{p.error}</p>}
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
+                      p.status === "done" ? "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        : p.status === "failed" ? "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                        : p.status === "processing" ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                        : "bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400"
+                    }`}>{p.status}</span>
+                  </div>
+
+                  {/* Per-slot detail for gallery jobs */}
+                  {productSlots.length > 0 && (
+                    <div className="ml-8 mt-2 space-y-1">
+                      {productSlots.map((s) => (
+                        <div key={`${s.handle}-${s.slot_order}`} className="flex items-center gap-2 text-xs">
+                          <span className="w-3.5 text-center">
+                            {s.status === "done" ? "\u2705" : s.status === "generating" ? "\u23F3" : s.status === "failed" ? "\u274C" : "\u23F8\uFE0F"}
+                          </span>
+                          <span className="text-stone-500 dark:text-stone-400 w-24 truncate">{s.shot_type}</span>
+                          <span className="text-stone-400 dark:text-stone-500 truncate">{s.model_slug}</span>
+                          {s.error && <span className="text-red-400 truncate ml-auto">{s.error}</span>}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  {p.error && <p className="text-xs text-red-500 dark:text-red-400 truncate">{p.error}</p>}
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
-                  p.status === "done" ? "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                    : p.status === "failed" ? "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400"
-                    : p.status === "processing" ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
-                    : "bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400"
-                }`}>{p.status}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Action buttons */}
