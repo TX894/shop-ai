@@ -542,6 +542,22 @@ export default function ImportModal({
                   Import directly
                 </button>
                 <button
+                  onClick={() => {
+                    sessionStorage.setItem(
+                      "galleryConfig",
+                      JSON.stringify({
+                        handles: [...modalSelected],
+                        sourceStore,
+                      })
+                    );
+                    window.location.href = "/scan/configure";
+                  }}
+                  disabled={modalSelected.size === 0}
+                  className="text-sm border border-violet-300 text-violet-600 px-4 py-2.5 rounded hover:border-violet-500 disabled:opacity-50"
+                >
+                  Gallery Mode
+                </button>
+                <button
                   onClick={async () => {
                     const importOpts = {
                       sourceStore,
