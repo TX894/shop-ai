@@ -26,13 +26,18 @@ interface SlotStatus {
 
 interface JobStatus {
   id: string;
-  status: "pending" | "processing" | "done" | "failed";
+  status: "pending" | "processing" | "done" | "failed" | "cancelled";
   mode?: "gallery" | "legacy";
   total_products: number;
   completed_products: number;
   failed_products: number;
   products: ProductStatus[];
   slots?: SlotStatus[];
+  slots_total?: number;
+  slots_done?: number;
+  slots_failed?: number;
+  slots_generating?: number;
+  slots_pending?: number;
   created_at: string;
   updated_at: string;
 }
@@ -52,6 +57,7 @@ export default function JobPage() {
   const processingRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const [resuming, setResuming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // Timing
   const startTimeRef = useRef<number>(Date.now());
@@ -143,6 +149,19 @@ export default function JobPage() {
     finally { setResuming(false); }
   }
 
+  async function handleCancel() {
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Cancel failed"); return; }
+      toast.success("Job cancelled");
+      clearInterval(pollRef.current);
+      await fetchStatus();
+    } catch { toast.error("Network error"); }
+    finally { setCancelling(false); }
+  }
+
   // ---------- Render helpers ----------
 
   if (error) {
@@ -167,11 +186,22 @@ export default function JobPage() {
     );
   }
 
-  const finished = job.completed_products + job.failed_products;
-  const progress = job.total_products > 0 ? (finished / job.total_products) * 100 : 0;
-  const isFinished = job.status === "done" || job.status === "failed";
-  const processing = job.products.filter((p) => p.status === "processing").length;
-  const pending = job.products.filter((p) => p.status === "pending").length;
+  const isGallery = job.mode === "gallery";
+  // For gallery mode, track by slots; for legacy, track by products
+  const finished = isGallery
+    ? (job.slots_done ?? 0) + (job.slots_failed ?? 0)
+    : job.completed_products + job.failed_products;
+  const total = isGallery ? (job.slots_total ?? job.total_products) : job.total_products;
+  const progress = total > 0 ? (finished / total) * 100 : 0;
+  const isFinished = job.status === "done" || job.status === "failed" || job.status === "cancelled";
+  const processing = isGallery
+    ? (job.slots_generating ?? 0)
+    : job.products.filter((p) => p.status === "processing").length;
+  const pending = isGallery
+    ? (job.slots_pending ?? 0)
+    : job.products.filter((p) => p.status === "pending").length;
+  const doneCount = isGallery ? (job.slots_done ?? 0) : job.completed_products;
+  const failedCount = isGallery ? (job.slots_failed ?? 0) : job.failed_products;
 
   // ETA calculation
   let eta = "";
@@ -208,7 +238,7 @@ export default function JobPage() {
           <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100 mb-1">Import Job</h1>
           <p className="text-sm text-stone-500 dark:text-stone-400 mb-6">
             {isFinished
-              ? `Finished in ${formatElapsed(elapsed)}: ${job.completed_products} done, ${job.failed_products} failed`
+              ? `Finished in ${formatElapsed(elapsed)}: ${doneCount} done, ${failedCount} failed`
               : `Processing... ${formatElapsed(elapsed)} elapsed`}
           </p>
 
@@ -216,14 +246,14 @@ export default function JobPage() {
           <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-stone-700 dark:text-stone-300">
-                {finished}/{job.total_products} complete
+                {finished}/{total} {isGallery ? "slots" : "products"} complete
               </span>
               <span className="text-xs text-stone-400">{Math.round(progress)}%</span>
             </div>
             <div className="h-2.5 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  isFinished && job.failed_products > 0 ? "bg-amber-500"
+                  isFinished && failedCount > 0 ? "bg-amber-500"
                     : isFinished ? "bg-green-500" : "bg-indigo-600"
                 }`}
                 style={{ width: `${progress}%` }}
@@ -235,12 +265,20 @@ export default function JobPage() {
               <div className="flex items-center gap-4 mt-3 text-xs text-stone-500 dark:text-stone-400 flex-wrap">
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 border-2 border-stone-300 border-t-indigo-600 rounded-full animate-spin" />
-                  <span>{processing} generating, {pending} pending, {job.completed_products} done, {job.failed_products} failed</span>
+                  <span>{processing} generating, {pending} pending, {doneCount} done, {failedCount} failed{isGallery ? " (slots)" : ""}</span>
                 </div>
                 {throughput && <span className="text-stone-400">|</span>}
                 {throughput && <span>{throughput}</span>}
                 {eta && <span className="text-stone-400">|</span>}
                 {eta && <span>{eta}</span>}
+                <span className="text-stone-400">|</span>
+                <button
+                  onClick={handleCancel}
+                  disabled={cancelling}
+                  className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  {cancelling ? "Cancelling..." : "Cancel Job"}
+                </button>
               </div>
             )}
           </div>
@@ -296,19 +334,19 @@ export default function JobPage() {
           {/* Action buttons */}
           {isFinished && (
             <div className="flex flex-wrap justify-center gap-3">
-              {job.failed_products > 0 && (
+              {failedCount > 0 && (
                 <button
                   onClick={handleResume}
                   disabled={resuming}
                   className="text-sm bg-amber-600 text-white px-5 py-2.5 rounded-lg hover:bg-amber-700 disabled:opacity-50 font-medium"
                 >
-                  {resuming ? "Resuming..." : `Retry ${job.failed_products} Failed`}
+                  {resuming ? "Resuming..." : `Retry ${failedCount} Failed`}
                 </button>
               )}
               <Link href="/scan" className="text-sm border border-stone-300 dark:border-stone-600 text-stone-600 dark:text-stone-300 px-5 py-2.5 rounded-lg hover:border-stone-500">
                 Import more
               </Link>
-              {job.completed_products > 0 && (
+              {doneCount > 0 && (
                 <button
                   onClick={() => {
                     sessionStorage.setItem("reviewJobId", job.id);

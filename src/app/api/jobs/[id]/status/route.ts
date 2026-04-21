@@ -62,6 +62,14 @@ export async function GET(
       slots = allSlots;
     }
 
+    const slotCounts = slots ? {
+      slots_total: slots.length,
+      slots_done: slots.filter((s) => s.status === "done").length,
+      slots_failed: slots.filter((s) => s.status === "failed").length,
+      slots_generating: slots.filter((s) => s.status === "generating").length,
+      slots_pending: slots.filter((s) => s.status === "pending").length,
+    } : undefined;
+
     return NextResponse.json({
       id: job.id,
       status: job.status,
@@ -71,6 +79,7 @@ export async function GET(
       failed_products: job.failed_products,
       products,
       slots,
+      ...slotCounts,
       created_at: job.created_at,
       updated_at: job.updated_at,
     });
