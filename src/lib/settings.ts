@@ -1,7 +1,8 @@
 /**
- * Settings persistence — Vercel Postgres in production, filesystem locally.
+ * Global app settings — Vercel Postgres in production, filesystem locally.
  * Detection: if POSTGRES_URL is set, use Postgres; otherwise JSON file.
  *
+ * Only stores global keys (not per-store Shopify credentials).
  * Reading priority: DB/file value > process.env > undefined
  */
 
@@ -12,21 +13,9 @@ const SETTINGS_PATH = path.join(process.cwd(), "data", "settings.json");
 
 interface AppSettings {
   KIE_AI_API_KEY?: string;
-  ANTHROPIC_KEY?: string;
-  SHOPIFY_CLIENT_ID?: string;
-  SHOPIFY_CLIENT_SECRET?: string;
-  SHOPIFY_STORE_DOMAIN?: string;
-  APP_PASSWORD?: string;
 }
 
-const KEY_NAMES = [
-  "KIE_AI_API_KEY",
-  "ANTHROPIC_KEY",
-  "SHOPIFY_CLIENT_ID",
-  "SHOPIFY_CLIENT_SECRET",
-  "SHOPIFY_STORE_DOMAIN",
-  "APP_PASSWORD",
-] as const;
+const KEY_NAMES = ["KIE_AI_API_KEY"] as const;
 
 type KeyName = (typeof KEY_NAMES)[number];
 
@@ -89,8 +78,7 @@ async function pgUpsert(updates: Partial<AppSettings>): Promise<void> {
 function fileReadAll(): AppSettings {
   try {
     if (fs.existsSync(SETTINGS_PATH)) {
-      const raw = fs.readFileSync(SETTINGS_PATH, "utf-8");
-      return JSON.parse(raw) as AppSettings;
+      return JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8")) as AppSettings;
     }
   } catch {
     /* ignore */
@@ -162,6 +150,20 @@ export async function updateKeys(
     fileWrite(current);
   }
   invalidateAllCaches();
+}
+
+/**
+ * One-shot migration: if KIE_AI_API_KEY is not in app_settings but exists
+ * in process.env, copy it to the DB so the app keeps working.
+ */
+export async function migrateEnvVarsToSettings(): Promise<void> {
+  const envKey = process.env.KIE_AI_API_KEY;
+  if (!envKey) return;
+
+  const settings = await readSettings();
+  if (settings.KIE_AI_API_KEY) return;
+
+  await updateKeys({ KIE_AI_API_KEY: envKey });
 }
 
 // --- Cache invalidation registry ---
