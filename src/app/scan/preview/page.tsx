@@ -332,7 +332,55 @@ function PreviewInner() {
 
     const included = state.products.filter((p) => p.included);
 
-    // Use the import/run endpoint
+    // Gallery mode: use dedicated push endpoint
+    const isGalleryMode = (opts as unknown as Record<string, unknown>).mode === "gallery";
+    const jobId = searchParams.get("jobId");
+
+    if (isGalleryMode && jobId) {
+      setImportStep("Pushing to Shopify...");
+      try {
+        // Look up draft IDs from job
+        const draftsRes = await fetch(`/api/jobs/${jobId}/results`);
+        const draftsData = await draftsRes.json();
+        const draftHandles = new Set(included.map((p) => p.handle));
+
+        // We need draft IDs — fetch them from the gallery endpoint
+        const statusRes = await fetch(`/api/jobs/${jobId}/status`);
+        const statusData = await statusRes.json();
+
+        // Get drafts via a dedicated call
+        const pushRes = await fetch("/api/gallery/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_id: jobId,
+            handles: [...draftHandles],
+            product_status: "DRAFT",
+          }),
+        });
+        const pushData = await pushRes.json();
+
+        if (pushData.results) {
+          for (const r of pushData.results) {
+            setImportResults((prev) => [
+              ...prev,
+              {
+                handle: r.handle,
+                title: r.handle,
+                adminUrl: r.adminUrl,
+                success: r.success,
+                error: r.error,
+              },
+            ]);
+          }
+        }
+      } catch { /* ignore */ }
+      sessionStorage.removeItem(STORAGE_KEY);
+      setPhase("done");
+      return;
+    }
+
+    // Legacy mode: use import/run SSE endpoint
     const importOpts = {
       ...opts,
       selectedHandles: included.map((p) => p.handle),
