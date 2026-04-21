@@ -394,3 +394,101 @@ export async function getSlotsByJob(jobId: string): Promise<GallerySlot[]> {
   }
   return allSlots;
 }
+
+/** Claim the next pending slot across all drafts in a job. Returns slot + its draft. */
+export async function claimNextSlot(
+  jobId: string
+): Promise<{ slot: GallerySlot; draft: ProductDraft } | null> {
+  const drafts = await getDraftsByJob(jobId);
+  for (const draft of drafts) {
+    const slots = await getSlotsByDraft(draft.id);
+    const pending = slots.find((s) => s.status === "pending");
+    if (pending) {
+      await updateSlotStatus(pending.id, "generating");
+      return { slot: { ...pending, status: "generating" }, draft };
+    }
+  }
+  return null;
+}
+
+/** Update draft with scraped product data */
+export async function updateDraftData(
+  id: string,
+  data: {
+    title?: string;
+    description?: string;
+    price?: string;
+    vendor?: string;
+    product_type?: string;
+    source_image_url?: string;
+  }
+): Promise<void> {
+  if (usePostgres()) {
+    await ensurePgGallerySchema();
+    const { sql } = await import("@vercel/postgres");
+    const sets: string[] = ["updated_at = NOW()"];
+    const vals: unknown[] = [];
+    let idx = 1;
+    if (data.title !== undefined) { sets.push(`title = $${idx++}`); vals.push(data.title); }
+    if (data.description !== undefined) { sets.push(`description = $${idx++}`); vals.push(data.description); }
+    if (data.price !== undefined) { sets.push(`price = $${idx++}`); vals.push(data.price); }
+    if (data.vendor !== undefined) { sets.push(`vendor = $${idx++}`); vals.push(data.vendor); }
+    if (data.product_type !== undefined) { sets.push(`product_type = $${idx++}`); vals.push(data.product_type); }
+    if (data.source_image_url !== undefined) { sets.push(`source_image_url = $${idx++}`); vals.push(data.source_image_url); }
+    vals.push(id);
+    await sql.query(
+      `UPDATE product_drafts SET ${sets.join(", ")} WHERE id = $${idx}`,
+      vals
+    );
+    return;
+  }
+  const drafts = fileRead<ProductDraft>(DRAFTS_PATH);
+  const d = drafts.find((x) => x.id === id);
+  if (d) {
+    if (data.title !== undefined) d.title = data.title;
+    if (data.description !== undefined) d.description = data.description;
+    if (data.price !== undefined) d.price = data.price;
+    if (data.vendor !== undefined) d.vendor = data.vendor;
+    if (data.product_type !== undefined) d.product_type = data.product_type;
+    if (data.source_image_url !== undefined) d.source_image_url = data.source_image_url;
+    d.updated_at = new Date().toISOString();
+  }
+  fileWrite(DRAFTS_PATH, drafts);
+}
+
+/** Check if all slots for a draft are complete (done or failed) */
+export async function isDraftComplete(draftId: string): Promise<boolean> {
+  const slots = await getSlotsByDraft(draftId);
+  return slots.every((s) => s.status === "done" || s.status === "failed");
+}
+
+/** Check if all drafts in a job have all slots complete */
+export async function isJobSlotsComplete(
+  jobId: string
+): Promise<{ complete: boolean; doneCount: number; failedCount: number; totalCount: number }> {
+  const allSlots = await getSlotsByJob(jobId);
+  const doneCount = allSlots.filter((s) => s.status === "done").length;
+  const failedCount = allSlots.filter((s) => s.status === "failed").length;
+  return {
+    complete: allSlots.every((s) => s.status === "done" || s.status === "failed"),
+    doneCount,
+    failedCount,
+    totalCount: allSlots.length,
+  };
+}
+
+/** Reset zombie slots (generating > 3 min) back to pending */
+export async function recoverZombieSlots(jobId: string): Promise<number> {
+  const allSlots = await getSlotsByJob(jobId);
+  const now = Date.now();
+  let recovered = 0;
+  for (const slot of allSlots) {
+    if (slot.status !== "generating") continue;
+    const updatedAt = new Date(slot.updated_at).getTime();
+    if (now - updatedAt > 3 * 60 * 1000) {
+      await updateSlotStatus(slot.id, "pending", { error_message: undefined });
+      recovered++;
+    }
+  }
+  return recovered;
+}

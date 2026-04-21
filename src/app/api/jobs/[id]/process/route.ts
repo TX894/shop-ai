@@ -14,10 +14,14 @@ import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { fetchWithRetry } from "@/lib/fetch-utils";
 import {
-  getDraftsByJob,
-  getSlotsByDraft,
+  claimNextSlot,
   updateSlotStatus,
+  updateDraftData,
   updateDraftStatus,
+  isDraftComplete,
+  isJobSlotsComplete,
+  recoverZombieSlots,
+  getSlotsByDraft,
 } from "@/lib/gallery";
 
 export const runtime = "nodejs";
@@ -37,13 +41,8 @@ export async function POST(
   if (!job) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
-  if (job.status === "done" || job.status === "failed") {
+  if (job.status === "done" || job.status === "failed" || (job as { status: string }).status === "cancelled") {
     return NextResponse.json({ status: job.status, message: "Job already finished" });
-  }
-
-  const recovered = await recoverZombieProducts(jobId);
-  if (recovered > 0) {
-    console.log(`[jobs/process] Recovered ${recovered} zombie product(s) for job ${jobId}`);
   }
 
   // Detect gallery mode
@@ -53,7 +52,228 @@ export async function POST(
     isGallery = parsedOpts.mode === "gallery";
   } catch { /* not gallery */ }
 
-  // Claim next product
+  if (isGallery) {
+    return processGallerySlot(jobId, startTime);
+  } else {
+    return processLegacyJob(jobId, job, startTime);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GALLERY MODE — 1 slot per invocation
+// ═══════════════════════════════════════════════════════════════
+
+async function processGallerySlot(jobId: string, startTime: number) {
+  // Recover zombie slots stuck in 'generating' > 3 min
+  const recovered = await recoverZombieSlots(jobId);
+  if (recovered > 0) {
+    console.log(`[gallery/process] Recovered ${recovered} zombie slot(s) for job ${jobId}`);
+  }
+
+  // Claim next pending slot (across all products)
+  const claimed = await claimNextSlot(jobId);
+  if (!claimed) {
+    // No pending slots — check overall job completion
+    const { complete, doneCount, failedCount, totalCount } = await isJobSlotsComplete(jobId);
+    if (complete) {
+      // Build results and finalize product-level tracking
+      await finalizeGalleryJob(jobId);
+    }
+    return NextResponse.json({
+      status: complete ? "done" : "processing",
+      slots_done: doneCount,
+      slots_failed: failedCount,
+      slots_total: totalCount,
+      processed_this_call: 0,
+      recovered,
+    });
+  }
+
+  const { slot, draft } = claimed;
+
+  console.log(
+    `[gallery/process] Processing slot ${slot.shot_type} (${slot.model_slug}) for ${draft.handle}`
+  );
+
+  // Scrape product data if draft doesn't have it yet
+  let sourceBase64: string | undefined;
+  let sourceMime: string | undefined;
+
+  if (!draft.source_image_url) {
+    try {
+      const productRes = await fetchWithRetry(
+        `https://${draft.source_store}/products/${draft.handle}.json`,
+        { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" },
+        3,
+        30_000
+      );
+      if (productRes.ok) {
+        const productData = (await productRes.json()) as { product: ShopifyProduct };
+        const product = productData.product;
+        const firstImg = product.images[0]?.src ?? null;
+
+        await updateDraftData(draft.id, {
+          title: product.title,
+          description: product.body_html || "",
+          price: product.variants[0]?.price ?? "29.95",
+          vendor: product.vendor || "",
+          product_type: product.product_type || "",
+          source_image_url: firstImg,
+        });
+        await updateDraftStatus(draft.id, "processing");
+
+        // Download source image
+        if (firstImg) {
+          const imgRes = await fetchWithRetry(
+            firstImg,
+            { headers: { "User-Agent": "Mozilla/5.0" } },
+            3,
+            30_000
+          );
+          if (imgRes.ok) {
+            sourceBase64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+            sourceMime = imgRes.headers.get("content-type") || "image/png";
+          }
+        }
+      } else {
+        await updateSlotStatus(slot.id, "failed", {
+          error_message: `Scrape failed: HTTP ${productRes.status}`,
+        });
+        return NextResponse.json({
+          status: "processing",
+          processed_this_call: 1,
+          slot_result: "failed",
+          error: `Scrape failed: HTTP ${productRes.status}`,
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Scrape error";
+      await updateSlotStatus(slot.id, "failed", { error_message: msg });
+      return NextResponse.json({
+        status: "processing",
+        processed_this_call: 1,
+        slot_result: "failed",
+        error: msg,
+      });
+    }
+  } else {
+    // Draft already scraped — download source image
+    try {
+      const imgRes = await fetchWithRetry(
+        draft.source_image_url,
+        { headers: { "User-Agent": "Mozilla/5.0" } },
+        2,
+        15_000
+      );
+      if (imgRes.ok) {
+        sourceBase64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+        sourceMime = imgRes.headers.get("content-type") || "image/png";
+      }
+    } catch { /* generate without source */ }
+  }
+
+  // Generate image for this slot
+  try {
+    const genStart = Date.now();
+    const genResult = await generateImage({
+      modelSlug: slot.model_slug,
+      prompt: slot.prompt,
+      sourceImageBase64: sourceBase64,
+      sourceMimeType: sourceMime,
+    });
+
+    await updateSlotStatus(slot.id, "done", {
+      generated_image_url: `generated:${genResult.modelUsed}:${genResult.creditsUsed}cr`,
+      credits_used: genResult.creditsUsed,
+    });
+
+    console.log(
+      `[gallery/process] Slot ${slot.shot_type} done for ${draft.handle} in ${Date.now() - genStart}ms ` +
+      `(requested=${slot.model_slug}, used=${genResult.modelUsed})`
+    );
+
+    // Check if this draft is now complete
+    if (await isDraftComplete(draft.id)) {
+      await updateDraftStatus(draft.id, "done");
+      // Also mark in product_queue for the job-level UI
+      await markProductDoneFromDraft(jobId, draft);
+    }
+
+    return NextResponse.json({
+      status: "processing",
+      processed_this_call: 1,
+      slot_result: "done",
+      model_used: genResult.modelUsed,
+      elapsed_ms: Date.now() - startTime,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "AI generation failed";
+    await updateSlotStatus(slot.id, "failed", { error_message: msg });
+    console.error(`[gallery/process] Slot ${slot.shot_type} failed for ${draft.handle}: ${msg}`);
+
+    if (await isDraftComplete(draft.id)) {
+      await updateDraftStatus(draft.id, "done");
+      await markProductDoneFromDraft(jobId, draft);
+    }
+
+    return NextResponse.json({
+      status: "processing",
+      processed_this_call: 1,
+      slot_result: "failed",
+      error: msg,
+      elapsed_ms: Date.now() - startTime,
+    });
+  }
+}
+
+/** When all slots for a draft are complete, mark the product in the job queue as done */
+async function markProductDoneFromDraft(jobId: string, draft: { id: string; handle: string }) {
+  const job = await getJob(jobId);
+  if (!job) return;
+
+  const idx = job.product_queue.findIndex((p) => p.handle === draft.handle);
+  if (idx === -1) return;
+
+  const slots = await getSlotsByDraft(draft.id);
+  const images = slots.map((s) => ({
+    role: s.shot_type,
+    originalUrl: "",
+    aiGenerated: s.status === "done",
+    error: s.error_message ?? undefined,
+  }));
+
+  await markProductDone(jobId, idx, {
+    title: draft.handle,
+    images: images as typeof job.product_queue[0]["images"],
+  });
+}
+
+/** Finalize a gallery job — mark all remaining products as done/failed */
+async function finalizeGalleryJob(jobId: string) {
+  const job = await getJob(jobId);
+  if (!job || job.status === "done" || job.status === "failed") return;
+
+  // Find any products still in pending/processing and finalize them
+  for (let i = 0; i < job.product_queue.length; i++) {
+    const p = job.product_queue[i];
+    if (p.status === "pending" || p.status === "processing") {
+      await markProductDone(jobId, i, { title: p.handle });
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LEGACY MODE — 1 product per invocation (unchanged)
+// ═══════════════════════════════════════════════════════════════
+
+async function processLegacyJob(
+  jobId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  job: any,
+  startTime: number
+) {
+  const recovered = await recoverZombieProducts(jobId);
+
   const claimed = await claimNextProduct(jobId);
   if (!claimed) {
     const updated = await getJob(jobId);
@@ -69,19 +289,13 @@ export async function POST(
 
   const { productIndex } = claimed;
   const product = claimed.job.product_queue[productIndex];
+  const opts: ImportOptions = JSON.parse(job.options);
 
   try {
-    let result;
-    if (isGallery) {
-      result = await processGalleryProduct(jobId, product.handle, product.sourceStore, startTime);
-    } else {
-      const opts: ImportOptions = JSON.parse(claimed.job.options);
-      result = await processLegacyProduct(product.handle, product.sourceStore, opts, startTime);
-    }
+    const result = await processLegacyProduct(product.handle, product.sourceStore, opts, startTime);
     await markProductDone(jobId, productIndex, result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error(`[jobs/process] Product ${product.handle} failed: ${msg}`);
     await markProductFailed(jobId, productIndex, msg);
   }
 
@@ -100,139 +314,6 @@ export async function POST(
 function budgetExceeded(startTime: number): boolean {
   return Date.now() - startTime > BUDGET_MS;
 }
-
-// ═══════════════════════════════════════════════════════════════
-// GALLERY MODE — reads per-slot prompts/models from gallery_slots
-// ═══════════════════════════════════════════════════════════════
-
-async function processGalleryProduct(
-  jobId: string,
-  handle: string,
-  sourceStore: string,
-  startTime: number
-) {
-  // 1. Find the draft for this product
-  const drafts = await getDraftsByJob(jobId);
-  const draft = drafts.find((d) => d.handle === handle);
-  if (!draft) throw new Error(`No draft found for handle ${handle}`);
-
-  await updateDraftStatus(draft.id, "processing");
-
-  // 2. Scrape product data
-  const productRes = await fetchWithRetry(
-    `https://${sourceStore}/products/${handle}.json`,
-    { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" },
-    3,
-    30_000
-  );
-  if (!productRes.ok) {
-    await updateDraftStatus(draft.id, "failed");
-    throw new Error(`Failed to fetch product: HTTP ${productRes.status}`);
-  }
-  const productData = (await productRes.json()) as { product: ShopifyProduct };
-  const product = productData.product;
-
-  // 3. Download source image (first product image)
-  const sourceImg = product.images[0];
-  let sourceBase64: string | undefined;
-  let sourceMime: string | undefined;
-
-  if (sourceImg) {
-    try {
-      const imgRes = await fetchWithRetry(
-        sourceImg.src,
-        { headers: { "User-Agent": "Mozilla/5.0" } },
-        3,
-        30_000
-      );
-      if (imgRes.ok) {
-        const buf = Buffer.from(await imgRes.arrayBuffer());
-        sourceBase64 = buf.toString("base64");
-        sourceMime = imgRes.headers.get("content-type") || "image/png";
-      }
-    } catch { /* continue without source image */ }
-  }
-
-  // 4. Process each gallery slot
-  const slots = await getSlotsByDraft(draft.id);
-  const resultImages: {
-    role: string;
-    originalUrl: string;
-    resultBase64?: string;
-    resultMime?: string;
-    aiGenerated: boolean;
-    error?: string;
-  }[] = [];
-
-  for (const slot of slots) {
-    if (budgetExceeded(startTime)) {
-      await updateSlotStatus(slot.id, "failed", {
-        error_message: "Skipped: time budget exceeded",
-      });
-      resultImages.push({
-        role: slot.shot_type,
-        originalUrl: sourceImg?.src ?? "",
-        aiGenerated: false,
-        error: "Skipped: time budget exceeded",
-      });
-      continue;
-    }
-
-    await updateSlotStatus(slot.id, "generating");
-
-    try {
-      const genStart = Date.now();
-      const genResult = await generateImage({
-        modelSlug: slot.model_slug,
-        prompt: slot.prompt,
-        sourceImageBase64: sourceBase64,
-        sourceMimeType: sourceMime,
-      });
-
-      await updateSlotStatus(slot.id, "done", {
-        generated_image_url: `data:${genResult.mimeType};base64,${genResult.imageBase64.slice(0, 50)}...`, // Store a marker; full data in results
-        credits_used: genResult.creditsUsed,
-      });
-
-      resultImages.push({
-        role: slot.shot_type,
-        originalUrl: sourceImg?.src ?? "",
-        resultBase64: genResult.imageBase64,
-        resultMime: genResult.mimeType,
-        aiGenerated: true,
-      });
-
-      console.log(
-        `[jobs/process] Slot ${slot.shot_type} done for ${handle} in ${Date.now() - genStart}ms (${slot.model_slug})`
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "AI generation failed";
-      await updateSlotStatus(slot.id, "failed", { error_message: msg });
-      resultImages.push({
-        role: slot.shot_type,
-        originalUrl: sourceImg?.src ?? "",
-        aiGenerated: false,
-        error: msg,
-      });
-      console.error(`[jobs/process] Slot ${slot.shot_type} failed for ${handle}: ${msg}`);
-    }
-  }
-
-  await updateDraftStatus(draft.id, "done");
-
-  return {
-    title: product.title,
-    description: product.body_html || "",
-    price: product.variants[0]?.price ?? "29.95",
-    vendor: product.vendor || "",
-    productType: product.product_type || "",
-    images: resultImages,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// LEGACY MODE — original ImportOptions-based flow
-// ═══════════════════════════════════════════════════════════════
 
 async function processLegacyProduct(
   handle: string,
