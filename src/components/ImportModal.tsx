@@ -50,6 +50,8 @@ export default function ImportModal({
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [selectedCollection, setSelectedCollection] = useState("general");
   const [customPrompt, setCustomPrompt] = useState("");
+  const [imageModels, setImageModels] = useState<{ slug: string; displayName: string; description: string; supportsEditing: boolean; creditsPerImage: number }[]>([]);
+  const [selectedModel, setSelectedModel] = useState("nano-banana-edit");
 
   // Tags
   const [tags, setTags] = useState("closing-sale, imported");
@@ -99,6 +101,13 @@ export default function ImportModal({
         setCollections(data.collections ?? []);
       })
       .catch(() => {});
+
+    fetch("/api/models?editing=true")
+      .then((r) => r.json())
+      .then((data: { models: typeof imageModels }) => {
+        setImageModels(data.models);
+      })
+      .catch(() => {});
   }, [open]);
 
   // Reset when opened
@@ -143,7 +152,8 @@ export default function ImportModal({
   // Cost estimate
   const count = modalSelected.size;
   const avgImages = 3;
-  const aiImageCost = aiImagesEnabled ? count * avgImages * 0.04 : 0;
+  const modelCredits = imageModels.find((m) => m.slug === selectedModel)?.creditsPerImage ?? 4;
+  const aiImageCost = aiImagesEnabled ? count * avgImages * modelCredits * 0.01 : 0;
   const translateCost = translateEnabled ? count * 0.004 : 0;
   const enhanceCost = (enhanceTitleEnabled ? count * 0.002 : 0) + (enhanceDescEnabled ? count * 0.003 : 0);
   const totalCost = aiImageCost + translateCost + enhanceCost;
@@ -169,6 +179,7 @@ export default function ImportModal({
           aiImagePresetId: aiImagesEnabled ? selectedPresetId : undefined,
           aiImageCollection: aiImagesEnabled ? selectedCollection : undefined,
           aiImageCustomPrompt: aiImagesEnabled && customPrompt.trim() ? customPrompt.trim() : undefined,
+          imageModel: aiImagesEnabled ? selectedModel : undefined,
           tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
           collectionIds: [...selectedCollectionIds],
           pricingMode,
@@ -324,6 +335,26 @@ export default function ImportModal({
                 {aiImagesEnabled && (
                   <div className="space-y-3">
                     <h3 className="text-xs font-medium text-stone-600 uppercase tracking-wide">AI Images</h3>
+                    {/* Model picker */}
+                    <div>
+                      <label className="block text-xs text-stone-500 mb-1">Image Model</label>
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm bg-white"
+                      >
+                        {imageModels.map((m) => (
+                          <option key={m.slug} value={m.slug}>
+                            {m.displayName} ({m.creditsPerImage} credits)
+                          </option>
+                        ))}
+                      </select>
+                      {imageModels.find((m) => m.slug === selectedModel)?.description && (
+                        <p className="text-[10px] text-stone-400 mt-0.5">
+                          {imageModels.find((m) => m.slug === selectedModel)?.description}
+                        </p>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-stone-500 mb-1">Brand Preset</label>
