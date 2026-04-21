@@ -1,7 +1,7 @@
 {
   "functions": {
     "app/api/jobs/[id]/process/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/import/preview/route.ts": {
       "maxDuration": 300

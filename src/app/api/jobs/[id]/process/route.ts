@@ -25,9 +25,9 @@ import {
 } from "@/lib/gallery";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
-const BUDGET_MS = 50_000;
+const BUDGET_MS = 270_000; // 270s budget within 300s maxDuration (Pro plan)
 const DEFAULT_ROLES: ImageRole[] = ["hero", "detail", "lifestyle"];
 
 export async function POST(
