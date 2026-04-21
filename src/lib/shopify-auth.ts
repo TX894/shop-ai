@@ -16,10 +16,10 @@ registerCacheInvalidator(() => {
   tokenExpiresAt = 0;
 });
 
-function getConfig() {
-  const domain = getConfigValue("SHOPIFY_STORE_DOMAIN");
-  const clientId = getConfigValue("SHOPIFY_CLIENT_ID");
-  const clientSecret = getConfigValue("SHOPIFY_CLIENT_SECRET");
+async function getConfig() {
+  const domain = await getConfigValue("SHOPIFY_STORE_DOMAIN");
+  const clientId = await getConfigValue("SHOPIFY_CLIENT_ID");
+  const clientSecret = await getConfigValue("SHOPIFY_CLIENT_SECRET");
 
   if (!domain || !clientId || !clientSecret) {
     throw new Error(
@@ -35,7 +35,7 @@ export async function getAccessToken(): Promise<string> {
     return cachedToken;
   }
 
-  const { domain, clientId, clientSecret } = getConfig();
+  const { domain, clientId, clientSecret } = await getConfig();
 
   const res = await fetch(`https://${domain}/admin/oauth/access_token`, {
     method: "POST",
@@ -68,6 +68,7 @@ export async function getAccessToken(): Promise<string> {
   return cachedToken;
 }
 
-export function getStoreDomain(): string {
-  return getConfig().domain;
+export async function getStoreDomain(): Promise<string> {
+  const config = await getConfig();
+  return config.domain;
 }

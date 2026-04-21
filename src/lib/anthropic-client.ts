@@ -10,8 +10,8 @@ registerCacheInvalidator(() => {
   _lastKey = null;
 });
 
-function getClient(): Anthropic {
-  const key = getConfigValue("ANTHROPIC_KEY");
+async function getClient(): Promise<Anthropic> {
+  const key = await getConfigValue("ANTHROPIC_KEY");
   if (!key) {
     throw new Error("ANTHROPIC_KEY is not set. Add it via /settings or .env.local.");
   }
@@ -28,7 +28,7 @@ export async function complete(
   userMessage: string,
   options?: { maxTokens?: number; temperature?: number }
 ): Promise<string> {
-  const client = getClient();
+  const client = await getClient();
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: options?.maxTokens ?? 1024,

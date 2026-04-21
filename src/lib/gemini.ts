@@ -39,8 +39,8 @@ async function ensurePng(
   return { imageBase64: pngBuffer.toString("base64"), mimeType: "image/png" };
 }
 
-function getApiKey(): string {
-  const key = getConfigValue("KIE_AI_API_KEY");
+async function getApiKey(): Promise<string> {
+  const key = await getConfigValue("KIE_AI_API_KEY");
   if (!key) {
     throw new Error(
       "KIE_AI_API_KEY is not set. Add it via /settings or .env.local."
@@ -154,7 +154,7 @@ async function downloadAsBase64(
 
 export async function editImage(args: EditImageArgs): Promise<EditImageResult> {
   const { imageBase64, mimeType, prompt } = args;
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
 
   const { imageBase64: pngBase64, mimeType: pngMime } = await ensurePng(imageBase64, mimeType);
   const imageUrl = await uploadImage(pngBase64, pngMime, apiKey);

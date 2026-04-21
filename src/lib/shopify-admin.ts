@@ -41,7 +41,7 @@ export async function graphql<T = Record<string, unknown>>(
   variables?: Record<string, unknown>
 ): Promise<T> {
   const token = await getAccessToken();
-  const domain = getStoreDomain();
+  const domain = await getStoreDomain();
 
   const res = await fetchWithRetry(
     `https://${domain}/admin/api/${API_VERSION}/graphql.json`,
@@ -225,7 +225,7 @@ export async function pushProduct(
     }
   }
 
-  const domain = getStoreDomain();
+  const domain = await getStoreDomain();
   const numericId = productGid.split("/").pop();
   const adminUrl = `https://${domain}/admin/products/${numericId}`;
 

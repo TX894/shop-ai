@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import Header from "@/components/Header";
 
 interface KeyInfo {
@@ -20,6 +21,7 @@ const KEY_CONFIG: { key: string; label: string; service: string; isPlain?: boole
   { key: "SHOPIFY_STORE_DOMAIN", label: "Shopify Store Domain", service: "Shopify", isPlain: true },
   { key: "SHOPIFY_CLIENT_ID", label: "Shopify Client ID", service: "Shopify" },
   { key: "SHOPIFY_CLIENT_SECRET", label: "Shopify Client Secret", service: "Shopify" },
+  { key: "APP_PASSWORD", label: "App Password", service: "Authentication" },
 ];
 
 export default function SettingsPage() {
@@ -55,9 +57,16 @@ export default function SettingsPage() {
         body: JSON.stringify(toSend),
       });
       const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to save settings");
+        return;
+      }
       if (data.keys) setKeys(data.keys);
       setValues({});
       setSaved(true);
+      toast.success("Settings saved");
+    } catch {
+      toast.error("Network error — could not save settings");
     } finally {
       setSaving(false);
     }

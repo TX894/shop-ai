@@ -4,7 +4,8 @@ import { getMaskedKeys, updateKeys } from "@/lib/settings";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({ keys: getMaskedKeys() });
+  const keys = await getMaskedKeys();
+  return NextResponse.json({ keys });
 }
 
 export async function POST(req: NextRequest) {
@@ -15,6 +16,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  updateKeys(body);
-  return NextResponse.json({ ok: true, keys: getMaskedKeys() });
+  try {
+    await updateKeys(body);
+    const keys = await getMaskedKeys();
+    return NextResponse.json({ ok: true, keys });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save settings";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
