@@ -37,6 +37,7 @@ export async function GET(
           originalUrl: img.originalUrl,
           resultBase64: img.resultBase64,
           resultMime: img.resultMime,
+          resultUrl: img.resultUrl,
           aiGenerated: img.aiGenerated,
           error: img.error,
         })),

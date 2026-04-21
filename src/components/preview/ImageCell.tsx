@@ -39,10 +39,12 @@ export default function ImageCell({
   const [showRegen, setShowRegen] = useState(false);
   const [regenPrompt, setRegenPrompt] = useState(image.prompt ?? "");
 
-  const hasImage = !!image.resultBase64;
-  const imgSrc = hasImage
-    ? `data:${image.resultMime};base64,${image.resultBase64}`
-    : image.originalUrl;
+  const hasImage = !!(image.resultUrl || image.resultBase64);
+  const imgSrc = image.resultUrl
+    ? image.resultUrl
+    : image.resultBase64
+      ? `data:${image.resultMime};base64,${image.resultBase64}`
+      : image.originalUrl;
 
   return (
     <div className="relative group">

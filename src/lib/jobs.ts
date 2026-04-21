@@ -31,6 +31,7 @@ export interface JobProduct {
     originalUrl: string;
     resultBase64?: string;
     resultMime?: string;
+    resultUrl?: string; // Vercel Blob URL for gallery-mode images
     aiGenerated: boolean;
     error?: string;
   }[];

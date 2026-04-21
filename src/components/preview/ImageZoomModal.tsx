@@ -19,9 +19,11 @@ export default function ImageZoomModal({
   const image = images[currentIndex];
   if (!image) return null;
 
-  const imgSrc = image.resultBase64
-    ? `data:${image.resultMime};base64,${image.resultBase64}`
-    : image.originalUrl;
+  const imgSrc = image.resultUrl
+    ? image.resultUrl
+    : image.resultBase64
+      ? `data:${image.resultMime};base64,${image.resultBase64}`
+      : image.originalUrl;
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

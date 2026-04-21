@@ -4,6 +4,7 @@ export interface PreviewImage {
   originalUrl: string;
   resultBase64?: string;
   resultMime?: string;
+  resultUrl?: string; // Vercel Blob URL — preferred over base64 when available
   aiGenerated: boolean;
   error?: string;
   approved: boolean;
@@ -139,7 +140,7 @@ export function previewReducer(state: PreviewState, action: PreviewAction): Prev
         ...state,
         products: state.products.map((p) => ({
           ...p,
-          images: p.images.map((img) => (img.resultBase64 ? { ...img, approved: true } : img)),
+          images: p.images.map((img) => ((img.resultUrl || img.resultBase64) ? { ...img, approved: true } : img)),
         })),
       };
 

@@ -13,6 +13,7 @@ import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translati
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { fetchWithRetry } from "@/lib/fetch-utils";
+import { saveImage } from "@/lib/storage";
 import {
   claimNextSlot,
   updateSlotStatus,
@@ -182,8 +183,31 @@ async function processGallerySlot(jobId: string, startTime: number) {
       sourceMimeType: sourceMime,
     });
 
+    // Persist generated image to Vercel Blob
+    let imageUrl: string;
+    try {
+      const blobPath = `gallery/${jobId}/${draft.id}/${slot.slot_order}-${slot.shot_type}`;
+      imageUrl = await saveImage(genResult.imageBase64, genResult.mimeType, blobPath);
+    } catch (blobErr) {
+      const blobMsg = blobErr instanceof Error ? blobErr.message : "Blob upload failed";
+      console.error(`[gallery/process] Blob save failed for slot ${slot.shot_type}: ${blobMsg}`);
+      await updateSlotStatus(slot.id, "failed", { error_message: `Generated OK but Blob save failed: ${blobMsg}` });
+
+      if (await isDraftComplete(draft.id)) {
+        await updateDraftStatus(draft.id, "done");
+        await markProductDoneFromDraft(jobId, draft);
+      }
+      return NextResponse.json({
+        status: "processing",
+        processed_this_call: 1,
+        slot_result: "failed",
+        error: blobMsg,
+        elapsed_ms: Date.now() - startTime,
+      });
+    }
+
     await updateSlotStatus(slot.id, "done", {
-      generated_image_url: `generated:${genResult.modelUsed}:${genResult.creditsUsed}cr`,
+      generated_image_url: imageUrl,
       credits_used: genResult.creditsUsed,
     });
 
@@ -234,16 +258,25 @@ async function markProductDoneFromDraft(jobId: string, draft: { id: string; hand
   const idx = job.product_queue.findIndex((p) => p.handle === draft.handle);
   if (idx === -1) return;
 
+  // Read draft for scraped product data
+  const { getDraft } = await import("@/lib/gallery");
+  const fullDraft = await getDraft(draft.id);
+
   const slots = await getSlotsByDraft(draft.id);
   const images = slots.map((s) => ({
     role: s.shot_type,
-    originalUrl: "",
-    aiGenerated: s.status === "done",
+    originalUrl: fullDraft?.source_image_url ?? "",
+    resultUrl: s.generated_image_url ?? undefined, // Blob URL
+    aiGenerated: s.status === "done" && !!s.generated_image_url,
     error: s.error_message ?? undefined,
   }));
 
   await markProductDone(jobId, idx, {
-    title: draft.handle,
+    title: fullDraft?.title ?? draft.handle,
+    description: fullDraft?.description ?? "",
+    price: fullDraft?.price ?? "29.95",
+    vendor: fullDraft?.vendor ?? "",
+    productType: fullDraft?.product_type ?? "",
     images: images as typeof job.product_queue[0]["images"],
   });
 }
