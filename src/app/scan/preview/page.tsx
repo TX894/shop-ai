@@ -48,8 +48,74 @@ function PreviewInner() {
     return () => clearTimeout(saveTimer.current);
   }, [state, phase]);
 
+  // Load from completed job results
+  async function loadFromJob(jobId: string) {
+    setPhase("loading");
+    setLoadStep("Loading job results...");
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/results`);
+      if (!res.ok) { setPhase("ready"); return; }
+      const data = await res.json();
+
+      if (data.options) {
+        try { setOpts(JSON.parse(data.options)); } catch { /* ignore */ }
+      }
+
+      const products: PreviewProduct[] = (data.products ?? []).map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (raw: any) => {
+          const images: PreviewImage[] = (raw.images ?? []).map(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img: any, i: number) => ({
+              id: `${raw.handle}-${i}-${Date.now()}`,
+              role: img.role ?? "hero",
+              originalUrl: img.originalUrl ?? "",
+              resultBase64: img.resultBase64 ?? undefined,
+              resultMime: img.resultMime ?? undefined,
+              aiGenerated: img.aiGenerated ?? false,
+              error: img.error ?? undefined,
+              approved: !!img.resultBase64,
+              prompt: undefined,
+              versions: [],
+              currentVersion: 0,
+            })
+          );
+          return {
+            handle: raw.handle,
+            title: raw.title,
+            originalTitle: raw.title,
+            description: raw.description,
+            originalDescription: raw.description,
+            vendor: raw.vendor ?? "",
+            productType: raw.productType ?? "",
+            price: raw.price ?? "29.95",
+            images,
+            included: true,
+            collectionIds: [],
+            tags: [],
+          };
+        }
+      );
+
+      const aiImages = products.reduce(
+        (sum, p) => sum + p.images.filter((img) => img.aiGenerated).length,
+        0
+      );
+      dispatch({ type: "SET_PRODUCTS", products });
+      dispatch({ type: "ADD_AI_COST", cost: aiImages * AI_COST_PER_IMAGE });
+    } catch { /* ignore */ }
+    setPhase("ready");
+  }
+
   // Load preview
   useEffect(() => {
+    // Check if loading from a job
+    const jobId = searchParams.get("jobId");
+    if (jobId) {
+      loadFromJob(jobId);
+      return;
+    }
+
     // Try to restore from sessionStorage first
     try {
       const saved = sessionStorage.getItem(STORAGE_KEY);

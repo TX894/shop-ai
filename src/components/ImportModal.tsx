@@ -511,9 +511,8 @@ export default function ImportModal({
                   Import directly
                 </button>
                 <button
-                  onClick={() => {
-                    // Save options to sessionStorage and navigate to preview
-                    sessionStorage.setItem("previewOptions", JSON.stringify({
+                  onClick={async () => {
+                    const importOpts = {
                       sourceStore,
                       language,
                       translateEnabled,
@@ -530,7 +529,27 @@ export default function ImportModal({
                       markupPercent: pricingMode === "markup" ? parseFloat(markupPercent) || 0 : undefined,
                       productStatus,
                       selectedHandles: [...modalSelected],
-                    }));
+                    };
+
+                    // 3+ products: use async job queue to avoid Vercel timeouts
+                    if (modalSelected.size >= 3) {
+                      try {
+                        const res = await fetch("/api/jobs/create", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(importOpts),
+                        });
+                        const data = await res.json();
+                        if (data.jobId) {
+                          sessionStorage.setItem("previewOptions", JSON.stringify(importOpts));
+                          window.location.href = `/jobs/${data.jobId}`;
+                          return;
+                        }
+                      } catch { /* fall through to SSE preview */ }
+                    }
+
+                    // 1-2 products: quick SSE preview
+                    sessionStorage.setItem("previewOptions", JSON.stringify(importOpts));
                     window.location.href = `/scan/preview?store=${sourceStore}`;
                   }}
                   disabled={modalSelected.size === 0}
