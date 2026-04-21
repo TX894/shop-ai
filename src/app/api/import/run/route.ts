@@ -4,7 +4,7 @@ import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
-import { editImage } from "@/lib/gemini";
+import { generateImage } from "@/lib/image-generation";
 import { graphql, type PushResult } from "@/lib/shopify-admin";
 import { getStoreDomain } from "@/lib/shopify-auth";
 import { insertItem } from "@/lib/db";
@@ -177,13 +177,14 @@ export async function POST(req: NextRequest) {
                   promptUsed = prompt;
 
                   try {
-                    const edited = await editImage({
-                      imageBase64: imgBase64,
-                      mimeType: imgMime,
+                    const genResult = await generateImage({
+                      modelSlug: opts.imageModel,
                       prompt,
+                      sourceImageBase64: imgBase64,
+                      sourceMimeType: imgMime,
                     });
-                    resultBase64 = edited.imageBase64;
-                    resultMime = edited.mimeType;
+                    resultBase64 = genResult.imageBase64;
+                    resultMime = genResult.mimeType;
                   } catch (aiErr) {
                     aiImageFailed = true;
                     const aiMsg = aiErr instanceof Error ? aiErr.message : "AI image failed";

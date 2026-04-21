@@ -17,6 +17,7 @@ export interface ProcessRequestItem {
   collection?: string;
   customPrompt?: string;
   productNotes?: string; // legacy alias — prefer customPrompt
+  modelSlug?: string;
 }
 
 export interface ProcessRequest {

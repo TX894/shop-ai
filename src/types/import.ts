@@ -8,6 +8,7 @@ export interface ImportOptions {
   aiImagePresetId?: string;
   aiImageCollection?: string;
   aiImageCustomPrompt?: string;
+  imageModel?: string;
   tags: string[];
   collectionIds: string[];
   pricingMode: "original" | "fixed" | "markup";

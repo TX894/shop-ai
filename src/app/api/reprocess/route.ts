@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { editImage } from "@/lib/gemini";
+import { generateImage } from "@/lib/image-generation";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  let body: { imageBase64?: string; mimeType?: string; prompt?: string };
+  let body: { imageBase64?: string; mimeType?: string; prompt?: string; modelSlug?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -37,13 +37,19 @@ export async function POST(req: NextRequest) {
       send({ index: 0, status: "processing" });
 
       try {
-        const edited = await editImage({ imageBase64, mimeType, prompt });
+        const result = await generateImage({
+          modelSlug: body.modelSlug,
+          prompt,
+          sourceImageBase64: imageBase64,
+          sourceMimeType: mimeType,
+        });
         send({
           index: 0,
           status: "done",
-          imageBase64: edited.imageBase64,
-          mimeType: edited.mimeType,
+          imageBase64: result.imageBase64,
+          mimeType: result.mimeType,
           prompt,
+          modelUsed: result.modelUsed,
         });
       } catch (err) {
         send({

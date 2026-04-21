@@ -4,7 +4,7 @@ import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
-import { editImage } from "@/lib/gemini";
+import { generateImage } from "@/lib/image-generation";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -115,8 +115,13 @@ export async function POST(req: NextRequest) {
                 if (preset) {
                   const prompt = composePrompt({ preset, role, collection: opts.aiImageCollection, customPrompt: opts.aiImageCustomPrompt });
                   try {
-                    const edited = await editImage({ imageBase64: imgBase64, mimeType: imgMime, prompt });
-                    images.push({ role, originalUrl: img.src, resultBase64: edited.imageBase64, resultMime: edited.mimeType, aiGenerated: true });
+                    const result = await generateImage({
+                      modelSlug: opts.imageModel,
+                      prompt,
+                      sourceImageBase64: imgBase64,
+                      sourceMimeType: imgMime,
+                    });
+                    images.push({ role, originalUrl: img.src, resultBase64: result.imageBase64, resultMime: result.mimeType, aiGenerated: true });
                     continue;
                   } catch (aiErr) {
                     const msg = aiErr instanceof Error ? aiErr.message : "AI failed";

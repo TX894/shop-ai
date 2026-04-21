@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
-import { editImage } from "@/lib/gemini";
+import { generateImage } from "@/lib/image-generation";
 import type { ProcessRequest } from "@/types/preset";
 
 export const runtime = "nodejs";
@@ -55,17 +55,19 @@ export async function POST(req: NextRequest) {
         send({ index: i, status: "processing" });
 
         try {
-          const edited = await editImage({
-            imageBase64: item.imageBase64,
-            mimeType: item.mimeType,
+          const result = await generateImage({
+            modelSlug: item.modelSlug,
             prompt,
+            sourceImageBase64: item.imageBase64,
+            sourceMimeType: item.mimeType,
           });
           send({
             index: i,
             status: "done",
-            imageBase64: edited.imageBase64,
-            mimeType: edited.mimeType,
+            imageBase64: result.imageBase64,
+            mimeType: result.mimeType,
             prompt,
+            modelUsed: result.modelUsed,
           });
         } catch (err) {
           send({
