@@ -17,6 +17,8 @@ export interface JobProduct {
   sourceStore: string;
   status: "pending" | "processing" | "done" | "failed";
   error?: string;
+  retry_count?: number;
+  claimed_at?: string; // ISO timestamp when status changed to 'processing'
   // Result data (filled after processing)
   title?: string;
   description?: string;
@@ -199,6 +201,7 @@ export async function claimNextProduct(jobId: string): Promise<{
   if (idx === -1) return null;
 
   job.product_queue[idx].status = "processing";
+  job.product_queue[idx].claimed_at = new Date().toISOString();
   job.status = "processing";
 
   if (usePostgres()) {
@@ -271,6 +274,79 @@ export async function markProductFailed(
   if (!hasPending) {
     job.status = job.completed_products === 0 ? "failed" : "done";
   }
+
+  return saveJob(job);
+}
+
+const MAX_RETRIES = 3;
+const ZOMBIE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
+
+/**
+ * Recover zombie products: reset 'processing' products that have been
+ * stuck for more than ZOMBIE_THRESHOLD_MS back to 'pending'.
+ * If retry_count exceeds MAX_RETRIES, mark as failed.
+ */
+export async function recoverZombieProducts(jobId: string): Promise<number> {
+  const job = await getJob(jobId);
+  if (!job || job.status === "done" || job.status === "failed") return 0;
+
+  const now = Date.now();
+  let recovered = 0;
+
+  for (const product of job.product_queue) {
+    if (product.status !== "processing") continue;
+
+    const claimedAt = product.claimed_at ? new Date(product.claimed_at).getTime() : 0;
+    if (now - claimedAt < ZOMBIE_THRESHOLD_MS) continue;
+
+    const retries = (product.retry_count ?? 0) + 1;
+    if (retries > MAX_RETRIES) {
+      product.status = "failed";
+      product.error = `Stuck in generating state, abandoned after ${MAX_RETRIES} retries`;
+      job.failed_products += 1;
+      job.results.push(product);
+    } else {
+      product.status = "pending";
+      product.retry_count = retries;
+      product.claimed_at = undefined;
+    }
+    recovered++;
+  }
+
+  if (recovered > 0) {
+    // Recheck if job is complete after recovery
+    const hasPending = job.product_queue.some(
+      (p) => p.status === "pending" || p.status === "processing"
+    );
+    if (!hasPending) {
+      job.status = job.completed_products === 0 ? "failed" : "done";
+    }
+    await saveJob(job);
+  }
+
+  return recovered;
+}
+
+/** Resume a job: reset all 'processing' and 'failed' products to 'pending' */
+export async function resumeJob(jobId: string): Promise<ImportJob> {
+  const job = await getJob(jobId);
+  if (!job) throw new Error("Job not found");
+
+  // Reset failed and stuck processing products
+  for (const product of job.product_queue) {
+    if (product.status === "processing" || product.status === "failed") {
+      product.status = "pending";
+      product.retry_count = 0;
+      product.claimed_at = undefined;
+      product.error = undefined;
+    }
+  }
+
+  // Recalculate counters from results that are actually done
+  job.results = job.results.filter((r) => r.status === "done");
+  job.completed_products = job.results.length;
+  job.failed_products = 0;
+  job.status = job.completed_products === job.total_products ? "done" : "pending";
 
   return saveJob(job);
 }
