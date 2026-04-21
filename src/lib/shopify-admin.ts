@@ -246,7 +246,7 @@ async function uploadImageToProduct(
   productGid: string,
   libraryItemId: string
 ): Promise<void> {
-  const item = getItem(libraryItemId);
+  const item = await getItem(libraryItemId);
   if (!item) throw new Error(`Library item ${libraryItemId} not found`);
 
   const imageFile = readImage(item.result_path);

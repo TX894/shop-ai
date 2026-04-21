@@ -8,7 +8,7 @@ export async function GET(
 ) {
   const { id } = await params;
   const type = req.nextUrl.searchParams.get("type") ?? "result";
-  const item = getItem(id);
+  const item = await getItem(id);
 
   if (!item) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

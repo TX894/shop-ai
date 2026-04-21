@@ -7,8 +7,8 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 50), 200);
   const offset = Number(url.searchParams.get("offset") ?? 0);
 
-  const items = listItems(limit, offset);
-  const total = countItems();
+  const items = await listItems(limit, offset);
+  const total = await countItems();
 
   return NextResponse.json({ items, total, limit, offset });
 }
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   const originalPath = saveImage(body.originalBase64, body.originalMime || "image/png", `${id}-original`);
   const resultPath = saveImage(body.resultBase64, body.resultMime || "image/png", `${id}-result`);
 
-  insertItem({
+  await insertItem({
     id,
     preset_id: body.presetId,
     collection: body.collection ?? "general",

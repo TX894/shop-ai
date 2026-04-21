@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const item = getItem(id);
+  const item = await getItem(id);
   if (!item) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -19,14 +19,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const item = getItem(id);
+  const item = await getItem(id);
   if (!item) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   deleteImage(item.original_path);
   deleteImage(item.result_path);
-  deleteItem(id);
+  await deleteItem(id);
 
   return NextResponse.json({ deleted: true });
 }

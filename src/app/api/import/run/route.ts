@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
               const originalPath = saveImage(imgBase64, imgMime, `${itemId}-original`);
               const resultPath = saveImage(resultBase64, resultMime, `${itemId}-result`);
 
-              insertItem({
+              await insertItem({
                 id: itemId,
                 preset_id: opts.aiImagePresetId ?? "none",
                 collection: opts.aiImageCollection ?? "general",
@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
           const { updateItemShopify } = await import("@/lib/db");
           const now = new Date().toISOString();
           for (const libId of libraryItemIds) {
-            updateItemShopify(libId, {
+            await updateItemShopify(libId, {
               shopify_product_id: pushResult.productId,
               shopify_admin_url: pushResult.adminUrl,
               imported_at: now,
