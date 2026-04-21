@@ -2,14 +2,17 @@
  * Generic kie.ai API client — handles both endpoint patterns:
  *   1. Standard: /api/v1/jobs/createTask + /api/v1/jobs/recordInfo
  *   2. Flux:     /api/v1/flux/kontext/generate + /api/v1/flux/kontext/record-info
+ *
+ * All external fetch calls use fetchWithTimeout/fetchWithRetry for resilience.
  */
 
 import { getConfigValue } from "../settings";
+import { fetchWithTimeout, fetchWithRetry } from "../fetch-utils";
 
 const KIE_API_BASE = "https://api.kie.ai";
 const KIE_UPLOAD_BASE = "https://kieai.redpandaai.co";
 const POLL_INTERVAL_MS = 4_000;
-const POLL_TIMEOUT_MS = 120_000;
+const POLL_TIMEOUT_MS = 90_000; // Reduced from 120s to fit in 50s budget with margin
 
 export async function getApiKey(): Promise<string> {
   const key = await getConfigValue("KIE_AI_API_KEY");
@@ -25,17 +28,22 @@ export async function uploadImage(
   mimeType: string,
   apiKey: string
 ): Promise<string> {
-  const res = await fetch(`${KIE_UPLOAD_BASE}/api/file-base64-upload`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const res = await fetchWithRetry(
+    `${KIE_UPLOAD_BASE}/api/file-base64-upload`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        base64Data: `data:${mimeType};base64,${imageBase64}`,
+        uploadPath: "shop-ai",
+      }),
     },
-    body: JSON.stringify({
-      base64Data: `data:${mimeType};base64,${imageBase64}`,
-      uploadPath: "shop-ai",
-    }),
-  });
+    3,
+    30_000
+  );
 
   const json = await res.json();
   if (!json.success) {
@@ -50,14 +58,19 @@ export async function createStandardTask(
   apiKey: string,
   body: Record<string, unknown>
 ): Promise<string> {
-  const res = await fetch(`${KIE_API_BASE}/api/v1/jobs/createTask`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const res = await fetchWithRetry(
+    `${KIE_API_BASE}/api/v1/jobs/createTask`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    3,
+    30_000
+  );
 
   const json = await res.json();
   if (json.code !== 200) {
@@ -75,9 +88,10 @@ export async function pollStandardTask(
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${KIE_API_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
-      { headers: { Authorization: `Bearer ${apiKey}` } }
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+      15_000
     );
 
     const json = await res.json();
@@ -112,14 +126,19 @@ export async function createFluxTask(
   apiKey: string,
   body: Record<string, unknown>
 ): Promise<string> {
-  const res = await fetch(`${KIE_API_BASE}/api/v1/flux/kontext/generate`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const res = await fetchWithRetry(
+    `${KIE_API_BASE}/api/v1/flux/kontext/generate`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    3,
+    30_000
+  );
 
   const json = await res.json();
   if (json.code !== 200) {
@@ -137,9 +156,10 @@ export async function pollFluxTask(
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${KIE_API_BASE}/api/v1/flux/kontext/record-info?taskId=${encodeURIComponent(taskId)}`,
-      { headers: { Authorization: `Bearer ${apiKey}` } }
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+      15_000
     );
 
     const json = await res.json();
@@ -173,7 +193,7 @@ export async function pollFluxTask(
 export async function downloadAsBase64(
   url: string
 ): Promise<{ imageBase64: string; mimeType: string }> {
-  const res = await fetch(url);
+  const res = await fetchWithRetry(url, {}, 3, 30_000);
   if (!res.ok) {
     throw new Error(`Failed to download result image: ${res.status}`);
   }
