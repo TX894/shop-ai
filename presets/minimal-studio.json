@@ -1,0 +1,15 @@
+{
+  "id": "minimal-studio",
+  "name": "Minimalist Studio",
+  "description": "Clean Scandinavian-style product photography. Works well for home goods, beauty, accessories.",
+  "base_prompt": "minimalist product photography, clean studio setup, soft diffused studio lighting, scandinavian design aesthetic, neutral palette, sharp focus, e-commerce ready",
+  "collection_presets": {
+    "general": "plain off-white seamless paper background with subtle soft shadow below product"
+  },
+  "image_roles": {
+    "hero": "centered product shot on clean background, balanced composition, e-commerce main photo style",
+    "detail": "close-up detail shot showing product features and finish quality",
+    "lifestyle": "product shown in a tasteful minimal home context, natural window light, muted palette"
+  },
+  "negative": "no watermarks, no logos, no text, no cluttered scenes, no saturated backdrops, no props that compete with the product"
+}

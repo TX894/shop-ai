@@ -1,0 +1,18 @@
+{
+  "id": "audrey-roman",
+  "name": "Audrey & Roman — Luxury Editorial",
+  "description": "Luxury fine jewellery aesthetic for the Audrey & Roman store. Soft natural lighting on premium surfaces.",
+  "base_prompt": "luxury editorial product photography, high-end jewellery presentation, soft natural lighting, shallow depth of field, minimalist composition, premium magazine aesthetic, crisp focus on the product, subtle warm tones",
+  "collection_presets": {
+    "gold": "on polished white carrara marble surface, warm golden hour light coming from the left, soft glow",
+    "silver": "on cool grey brushed linen, diffused overhead daylight, cool tones",
+    "rose-gold": "on dusty pink velvet, soft pink window light, romantic and delicate atmosphere",
+    "general": "on off-white neutral surface with soft shadows, clean minimal background"
+  },
+  "image_roles": {
+    "hero": "centered hero product shot, product fills 60 percent of frame, clean composition suitable for a main listing photo",
+    "detail": "extreme macro close-up, texture and craftsmanship emphasis, shallow depth of field, gentle shadows showing material detail",
+    "lifestyle": "editorial lifestyle shot, jewellery elegantly worn by a refined hand or displayed in a tasteful context, neutral soft background, magazine feel"
+  },
+  "negative": "no competitor branding, no orange boxes, no Maya Henry's text, no other brand logos or labels, no watermarks, no price tags, no stickers, no cluttered backgrounds, no text overlays, no packaging, no harsh shadows, no oversaturated colors, no cartoon style"
+}
