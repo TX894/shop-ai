@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/jobs/[id]/process/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/import/preview/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/import/run/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
