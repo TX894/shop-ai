@@ -1,28 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { claimNextProduct, markProductDone, markProductFailed } from "@/lib/jobs";
+import {
+  claimNextProduct,
+  markProductDone,
+  markProductFailed,
+  recoverZombieProducts,
+  getJob,
+} from "@/lib/jobs";
 import type { ImportOptions } from "@/types/import";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
-import { getJob } from "@/lib/jobs";
+import { fetchWithRetry } from "@/lib/fetch-utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_PRODUCTS_PER_CALL = 2;
-const DELAY_BETWEEN_MS = 500;
+const BUDGET_MS = 50_000; // Hard budget — bail before 60s maxDuration
 const DEFAULT_ROLES: ImageRole[] = ["hero", "detail", "lifestyle"];
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startTime = Date.now();
   const { id: jobId } = await params;
 
   const job = await getJob(jobId);
@@ -33,54 +35,77 @@ export async function POST(
     return NextResponse.json({ status: job.status, message: "Job already finished" });
   }
 
-  const opts: ImportOptions = JSON.parse(job.options);
-  let processed = 0;
-
-  while (processed < MAX_PRODUCTS_PER_CALL) {
-    const claimed = await claimNextProduct(jobId);
-    if (!claimed) break; // No more pending products
-
-    const { productIndex } = claimed;
-    const product = claimed.job.product_queue[productIndex];
-
-    try {
-      const result = await processOneProduct(product.handle, product.sourceStore, opts);
-      await markProductDone(jobId, productIndex, result);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      await markProductFailed(jobId, productIndex, msg);
-    }
-
-    processed++;
-
-    // Delay between products to avoid rate limits
-    if (processed < MAX_PRODUCTS_PER_CALL) {
-      await sleep(DELAY_BETWEEN_MS);
-    }
+  // Recover any zombie products stuck in 'processing' > 3 min
+  const recovered = await recoverZombieProducts(jobId);
+  if (recovered > 0) {
+    console.log(`[jobs/process] Recovered ${recovered} zombie product(s) for job ${jobId}`);
   }
 
-  // Fetch final state
+  // Process exactly 1 product per invocation
+  const claimed = await claimNextProduct(jobId);
+  if (!claimed) {
+    // No pending products — check if job should be marked done
+    const updated = await getJob(jobId);
+    return NextResponse.json({
+      status: updated?.status ?? "unknown",
+      completed: updated?.completed_products ?? 0,
+      failed: updated?.failed_products ?? 0,
+      total: updated?.total_products ?? 0,
+      processed_this_call: 0,
+      recovered,
+    });
+  }
+
+  const { productIndex } = claimed;
+  const product = claimed.job.product_queue[productIndex];
+  const opts: ImportOptions = JSON.parse(claimed.job.options);
+
+  try {
+    const result = await processOneProduct(
+      product.handle,
+      product.sourceStore,
+      opts,
+      startTime
+    );
+    await markProductDone(jobId, productIndex, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[jobs/process] Product ${product.handle} failed: ${msg}`);
+    await markProductFailed(jobId, productIndex, msg);
+  }
+
   const updated = await getJob(jobId);
   return NextResponse.json({
     status: updated?.status ?? "unknown",
     completed: updated?.completed_products ?? 0,
     failed: updated?.failed_products ?? 0,
     total: updated?.total_products ?? 0,
-    processed_this_call: processed,
+    processed_this_call: 1,
+    recovered,
+    elapsed_ms: Date.now() - startTime,
   });
+}
+
+function budgetExceeded(startTime: number): boolean {
+  return Date.now() - startTime > BUDGET_MS;
 }
 
 async function processOneProduct(
   handle: string,
   sourceStore: string,
-  opts: ImportOptions
+  opts: ImportOptions,
+  startTime: number
 ) {
-  // 1. Fetch product data
-  const productRes = await fetch(
+  // 1. Fetch product data (with retry for 503s)
+  const productRes = await fetchWithRetry(
     `https://${sourceStore}/products/${handle}.json`,
-    { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" }
+    { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" },
+    3,
+    30_000
   );
-  if (!productRes.ok) throw new Error(`Failed to fetch product: HTTP ${productRes.status}`);
+  if (!productRes.ok) {
+    throw new Error(`Failed to fetch product: HTTP ${productRes.status} after retries`);
+  }
   const productData = (await productRes.json()) as { product: ShopifyProduct };
   const product = productData.product;
 
@@ -88,8 +113,8 @@ async function processOneProduct(
   let description = product.body_html || "";
   const originalDescription = description;
 
-  // 2. Translate
-  if (opts.translateEnabled && opts.language !== "en") {
+  // 2. Translate (skip if over budget)
+  if (opts.translateEnabled && opts.language !== "en" && !budgetExceeded(startTime)) {
     try {
       title = await translateText(title, opts.language);
       if (description) {
@@ -103,7 +128,7 @@ async function processOneProduct(
   }
 
   // 3. Enhance title
-  if (opts.enhanceTitleEnabled) {
+  if (opts.enhanceTitleEnabled && !budgetExceeded(startTime)) {
     try {
       const enhanced = await enhanceTitle(title, opts.language, product.product_type);
       if (enhanced && enhanced.length > 5) title = enhanced;
@@ -111,7 +136,7 @@ async function processOneProduct(
   }
 
   // 4. Enhance description
-  if (opts.enhanceDescriptionEnabled) {
+  if (opts.enhanceDescriptionEnabled && !budgetExceeded(startTime)) {
     try {
       const plain = description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       const enhanced = await enhanceDescription(plain, title, opts.language);
@@ -132,7 +157,7 @@ async function processOneProduct(
     if (!isNaN(base)) price = (base * (1 + opts.markupPercent / 100)).toFixed(2);
   } else if (opts.pricingMode === "fixed" && opts.fixedPrice) price = opts.fixedPrice;
 
-  // 6. Process images
+  // 6. Process images (with budget awareness)
   const images: {
     role: string;
     originalUrl: string;
@@ -147,8 +172,24 @@ async function processOneProduct(
     const img = imagesToProcess[j];
     const role = DEFAULT_ROLES[j] ?? "hero";
 
+    // If budget exceeded, skip AI generation and use original
+    if (budgetExceeded(startTime)) {
+      images.push({
+        role,
+        originalUrl: img.src,
+        aiGenerated: false,
+        error: "Skipped: time budget exceeded",
+      });
+      continue;
+    }
+
     try {
-      const imgRes = await fetch(img.src, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const imgRes = await fetchWithRetry(
+        img.src,
+        { headers: { "User-Agent": "Mozilla/5.0" } },
+        3,
+        30_000
+      );
       if (!imgRes.ok) {
         images.push({ role, originalUrl: img.src, aiGenerated: false, error: `Download failed: ${imgRes.status}` });
         continue;
@@ -157,7 +198,7 @@ async function processOneProduct(
       const imgBase64 = imgBuffer.toString("base64");
       const imgMime = imgRes.headers.get("content-type") || "image/png";
 
-      if (opts.aiImagesEnabled && opts.aiImagePresetId) {
+      if (opts.aiImagesEnabled && opts.aiImagePresetId && !budgetExceeded(startTime)) {
         const preset = await getPreset(opts.aiImagePresetId);
         if (preset) {
           const prompt = composePrompt({
@@ -167,8 +208,19 @@ async function processOneProduct(
             customPrompt: opts.aiImageCustomPrompt,
           });
           try {
-            const genResult = await generateImage({ modelSlug: opts.imageModel, prompt, sourceImageBase64: imgBase64, sourceMimeType: imgMime });
-            images.push({ role, originalUrl: img.src, resultBase64: genResult.imageBase64, resultMime: genResult.mimeType, aiGenerated: true });
+            const genResult = await generateImage({
+              modelSlug: opts.imageModel,
+              prompt,
+              sourceImageBase64: imgBase64,
+              sourceMimeType: imgMime,
+            });
+            images.push({
+              role,
+              originalUrl: img.src,
+              resultBase64: genResult.imageBase64,
+              resultMime: genResult.mimeType,
+              aiGenerated: true,
+            });
             continue;
           } catch (aiErr) {
             const msg = aiErr instanceof Error ? aiErr.message : "AI failed";
