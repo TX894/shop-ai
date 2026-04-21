@@ -56,12 +56,24 @@ export async function POST(
     }
 
     // Upload directly to Vercel Blob (never filesystem)
+    // Store MUST be public — private stores break direct URL access
     const { put } = await import("@vercel/blob");
-    const blob = await put(
-      `character-refs/${id}/${Date.now()}-${file.name}`,
-      file,
-      { access: "public", contentType: file.type }
-    );
+    let blob;
+    try {
+      blob = await put(
+        `character-refs/${id}/${Date.now()}-${file.name}`,
+        file,
+        { access: "public", contentType: file.type }
+      );
+    } catch (blobErr) {
+      if (blobErr instanceof Error && blobErr.message.includes("public access on a private store")) {
+        return NextResponse.json(
+          { error: "Blob store is private but must be public. Create a new PUBLIC Blob Store in Vercel Dashboard > Storage." },
+          { status: 500 }
+        );
+      }
+      throw blobErr;
+    }
 
     await updateStore(id, {
       character_reference_url: blob.url,

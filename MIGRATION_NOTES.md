@@ -51,14 +51,19 @@ All of these MUST be set in Vercel for the app to function:
 
 This token is **required** for all image uploads (product images, character references, AI results). Without it, uploads fail with "BLOB_READ_WRITE_TOKEN is not set".
 
+**CRITICAL: The Blob Store MUST be created with PUBLIC access.**
+
+Private stores require authenticated reads — URLs are not directly accessible via `<img src="">`. This breaks the UI and Shopify product images. You cannot change a store's access mode after creation. If you created a private store by mistake, create a new public one.
+
 1. Go to **Vercel Dashboard > your project (shop-ai)**
 2. Click **Storage** tab in the top nav
 3. Click **Connect Store** > **Blob** > **Create New**
-4. Name it (e.g. "shop-ai-images") and click **Create**
-5. Vercel automatically adds `BLOB_READ_WRITE_TOKEN` to your env vars
-6. **Redeploy** for the change to take effect
-
-If you already have a Blob store, go to Settings > Environment Variables and verify `BLOB_READ_WRITE_TOKEN` is present.
+4. Name it (e.g. "shop-ai-images")
+5. **Select "Public" access** (not Private — this cannot be changed later!)
+6. Click **Create**
+7. Vercel automatically adds `BLOB_READ_WRITE_TOKEN` to your env vars
+8. If you had an old private store, **disconnect it first** (Storage > store > Settings > Disconnect) so the new token takes priority
+9. **Redeploy** for the change to take effect
 
 ### Note on filesystem
 

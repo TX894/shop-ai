@@ -22,6 +22,11 @@ export function generateId(): string {
 /**
  * Returns a Blob URL (production) or local filename (dev).
  * In production (Vercel), BLOB_READ_WRITE_TOKEN must be set — filesystem is read-only.
+ *
+ * IMPORTANT: The Vercel Blob Store MUST be created with **public** access.
+ * Private stores require authenticated reads (token-signed URLs) which break
+ * direct <img src=""> usage in the UI and Shopify product images.
+ * You cannot change a store's access mode after creation.
  */
 export async function saveImage(base64: string, mime: string, prefix: string): Promise<string> {
   if (useBlob()) {
@@ -29,11 +34,22 @@ export async function saveImage(base64: string, mime: string, prefix: string): P
     const ext = extFromMime(mime);
     const filename = `${prefix}${ext}`;
     const buffer = Buffer.from(base64, "base64");
-    const blob = await put(filename, buffer, {
-      access: "public",
-      contentType: mime,
-    });
-    return blob.url;
+    try {
+      const blob = await put(filename, buffer, {
+        access: "public",
+        contentType: mime,
+      });
+      return blob.url;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("public access on a private store")) {
+        throw new Error(
+          "Blob store is private but must be public. " +
+          "Create a new PUBLIC Blob Store in Vercel Dashboard > Storage, " +
+          "then reconnect its token. Private stores cannot be changed to public."
+        );
+      }
+      throw err;
+    }
   }
 
   // Detect Vercel serverless (read-only filesystem) without Blob configured
