@@ -249,7 +249,7 @@ async function uploadImageToProduct(
   const item = await getItem(libraryItemId);
   if (!item) throw new Error(`Library item ${libraryItemId} not found`);
 
-  const imageFile = readImage(item.result_path);
+  const imageFile = await readImage(item.result_path);
   if (!imageFile) throw new Error(`Image file missing for ${libraryItemId}`);
 
   const filename = item.result_path;

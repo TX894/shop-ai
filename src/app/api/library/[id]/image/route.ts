@@ -14,9 +14,15 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const filename = type === "original" ? item.original_path : item.result_path;
-  const file = readImage(filename);
+  const pathOrUrl = type === "original" ? item.original_path : item.result_path;
 
+  // Blob URL — redirect directly
+  if (pathOrUrl.startsWith("https://")) {
+    return NextResponse.redirect(pathOrUrl);
+  }
+
+  // Local file — serve bytes
+  const file = await readImage(pathOrUrl);
   if (!file) {
     return NextResponse.json({ error: "Image file missing" }, { status: 404 });
   }

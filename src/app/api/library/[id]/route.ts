@@ -24,8 +24,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  deleteImage(item.original_path);
-  deleteImage(item.result_path);
+  await deleteImage(item.original_path);
+  await deleteImage(item.result_path);
   await deleteItem(id);
 
   return NextResponse.json({ deleted: true });

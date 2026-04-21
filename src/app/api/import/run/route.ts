@@ -201,8 +201,8 @@ export async function POST(req: NextRequest) {
 
               // Save to library (AI result or original fallback)
               const itemId = generateId();
-              const originalPath = saveImage(imgBase64, imgMime, `${itemId}-original`);
-              const resultPath = saveImage(resultBase64, resultMime, `${itemId}-result`);
+              const originalPath = await saveImage(imgBase64, imgMime, `${itemId}-original`);
+              const resultPath = await saveImage(resultBase64, resultMime, `${itemId}-result`);
 
               await insertItem({
                 id: itemId,

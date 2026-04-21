@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
   }
 
   const id = generateId();
-  const originalPath = saveImage(body.originalBase64, body.originalMime || "image/png", `${id}-original`);
-  const resultPath = saveImage(body.resultBase64, body.resultMime || "image/png", `${id}-result`);
+  const originalPath = await saveImage(body.originalBase64, body.originalMime || "image/png", `${id}-original`);
+  const resultPath = await saveImage(body.resultBase64, body.resultMime || "image/png", `${id}-result`);
 
   await insertItem({
     id,
