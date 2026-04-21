@@ -132,12 +132,13 @@ function ConfigureInner() {
         const next = [...prev];
         next[idx] = { ...next[idx], [field]: value };
 
-        // Auto-fill prompt when shot type changes
+        // Auto-fill prompt and reset model when shot type changes
         if (field === "shotType") {
           const preset = shotPresets.find((p) => p.type === value);
           if (preset) {
             next[idx].prompt = preset.preset.suggestedPrompt;
           }
+          next[idx].modelSlug = "nano-banana-edit";
         }
         return next;
       });
