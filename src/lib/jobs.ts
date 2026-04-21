@@ -39,7 +39,7 @@ export interface JobProduct {
 export interface ImportJob {
   id: string;
   store_id: string | null;
-  status: "pending" | "processing" | "done" | "failed";
+  status: "pending" | "processing" | "done" | "failed" | "cancelled";
   total_products: number;
   completed_products: number;
   failed_products: number;
@@ -347,6 +347,24 @@ export async function resumeJob(jobId: string): Promise<ImportJob> {
   job.completed_products = job.results.length;
   job.failed_products = 0;
   job.status = job.completed_products === job.total_products ? "done" : "pending";
+
+  return saveJob(job);
+}
+
+/** Cancel a job — mark as cancelled, stop processing */
+export async function cancelJob(jobId: string): Promise<ImportJob> {
+  const job = await getJob(jobId);
+  if (!job) throw new Error("Job not found");
+
+  job.status = "cancelled" as ImportJob["status"];
+
+  // Mark pending/processing products as cancelled
+  for (const product of job.product_queue) {
+    if (product.status === "pending" || product.status === "processing") {
+      product.status = "failed";
+      product.error = "Cancelled by user";
+    }
+  }
 
   return saveJob(job);
 }
