@@ -173,6 +173,26 @@ async function processGallerySlot(jobId: string, startTime: number) {
     } catch { /* generate without source */ }
   }
 
+  // Download character reference if slot has one
+  let charRefBase64: string | undefined;
+  let charRefMime: string | undefined;
+  if (slot.character_ref_url) {
+    try {
+      const charRes = await fetchWithRetry(
+        slot.character_ref_url,
+        { headers: { "User-Agent": "Mozilla/5.0" } },
+        2,
+        15_000
+      );
+      if (charRes.ok) {
+        charRefBase64 = Buffer.from(await charRes.arrayBuffer()).toString("base64");
+        charRefMime = charRes.headers.get("content-type") || "image/png";
+      }
+    } catch {
+      console.log(`[gallery/process] Could not download character ref for slot ${slot.shot_type}`);
+    }
+  }
+
   // Generate image for this slot
   try {
     const genStart = Date.now();
@@ -181,6 +201,9 @@ async function processGallerySlot(jobId: string, startTime: number) {
       prompt: slot.prompt,
       sourceImageBase64: sourceBase64,
       sourceMimeType: sourceMime,
+      referenceImageBase64: charRefBase64,
+      referenceMimeType: charRefMime,
+      fallbackModelSlug: "nano-banana-edit",
     });
 
     // Persist generated image to Vercel Blob
