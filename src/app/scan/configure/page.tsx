@@ -22,6 +22,7 @@ interface ModelInfo {
   displayName: string;
   description: string;
   supportsEditing: boolean;
+  supportsMultiImage: boolean;
   creditsPerImage: number;
 }
 
@@ -103,9 +104,10 @@ function ConfigureInner() {
       for (let i = 0; i < Math.min(defaultCount, defaultTypes.length); i++) {
         const type = defaultTypes[i];
         const preset = presets.find((p) => p.type === type);
+        const needsChar = type === "in_hand" || type === "on_model";
         initialSlots.push({
           shotType: type,
-          modelSlug: "nano-banana-edit",
+          modelSlug: needsChar ? "nano-banana-pro" : "nano-banana-edit",
           prompt: preset?.preset.suggestedPrompt ?? "",
         });
       }
@@ -132,13 +134,15 @@ function ConfigureInner() {
         const next = [...prev];
         next[idx] = { ...next[idx], [field]: value };
 
-        // Auto-fill prompt and reset model when shot type changes
+        // Auto-fill prompt and set recommended model when shot type changes
         if (field === "shotType") {
           const preset = shotPresets.find((p) => p.type === value);
           if (preset) {
             next[idx].prompt = preset.preset.suggestedPrompt;
           }
-          next[idx].modelSlug = "nano-banana-edit";
+          // Character shots → nano-banana-pro (multi-image), others → nano-banana-edit
+          const needsCharacter = value === "in_hand" || value === "on_model";
+          next[idx].modelSlug = needsCharacter ? "nano-banana-pro" : "nano-banana-edit";
         }
         return next;
       });
@@ -264,6 +268,24 @@ function ConfigureInner() {
   }, 0) * selectedHandles.length;
   const estimatedCost = (totalCredits * 0.01).toFixed(2);
   const estimatedMinutes = Math.ceil(totalImages * 0.5); // ~30s per image
+
+  // Per-model breakdown
+  const modelBreakdown = new Map<string, { name: string; slots: number; credits: number }>();
+  for (const s of slots) {
+    const m = models.find((x) => x.slug === s.modelSlug);
+    const key = s.modelSlug;
+    const existing = modelBreakdown.get(key);
+    if (existing) {
+      existing.slots += selectedHandles.length;
+      existing.credits += (m?.creditsPerImage ?? 4) * selectedHandles.length;
+    } else {
+      modelBreakdown.set(key, {
+        name: m?.displayName ?? key,
+        slots: selectedHandles.length,
+        credits: (m?.creditsPerImage ?? 4) * selectedHandles.length,
+      });
+    }
+  }
 
   // ---------- Render ----------
 
@@ -398,11 +420,16 @@ function ConfigureInner() {
                     }
                     className="text-sm px-2 py-1.5 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 rounded flex-shrink-0"
                   >
-                    {models.map((m) => (
-                      <option key={m.slug} value={m.slug}>
-                        {m.displayName} ({m.creditsPerImage}cr)
-                      </option>
-                    ))}
+                    {models.map((m) => {
+                      const isRecommended = needsChar
+                        ? m.slug === "nano-banana-pro"
+                        : m.slug === "nano-banana-edit";
+                      return (
+                        <option key={m.slug} value={m.slug}>
+                          {m.displayName} ({m.creditsPerImage}cr){isRecommended ? " \u2713" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
 
                   {/* Badges */}
@@ -457,7 +484,7 @@ function ConfigureInner() {
         <h2 className="text-sm font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">
           Summary
         </h2>
-        <div className="grid grid-cols-3 gap-4 text-center">
+        <div className="grid grid-cols-3 gap-4 text-center mb-4">
           <div>
             <p className="text-2xl font-semibold text-stone-900 dark:text-stone-100">
               {totalImages}
@@ -479,6 +506,16 @@ function ConfigureInner() {
             <p className="text-xs text-stone-400">estimated time</p>
           </div>
         </div>
+        {modelBreakdown.size > 1 && (
+          <div className="border-t border-stone-100 dark:border-stone-800 pt-3 space-y-1">
+            {[...modelBreakdown.values()].map((b) => (
+              <div key={b.name} className="flex justify-between text-xs text-stone-500 dark:text-stone-400">
+                <span>{b.slots} images x {b.name}</span>
+                <span>{b.credits} credits</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Sticky footer */}
