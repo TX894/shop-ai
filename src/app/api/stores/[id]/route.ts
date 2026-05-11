@@ -20,6 +20,8 @@ export async function PATCH(
     value_props?: string | null;
     default_language?: string | null;
     currency?: string | null;
+    logo_url?: string | null;
+    brand_short_name?: string | null;
   };
   try {
     body = await req.json();

@@ -36,6 +36,10 @@ export interface Store {
   default_language: string | null;
   /** Currency symbol or code (e.g. "£", "EUR"). Default "£" for backwards compatibility. */
   currency: string | null;
+  /** Vercel Blob URL for the store's logo image (PNG with alpha recommended). */
+  logo_url: string | null;
+  /** Short brand text used as a fallback watermark when no logo exists, or as the store URL on the watermark strip. */
+  brand_short_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -62,6 +66,8 @@ export interface UpdateStoreInput {
   value_props?: string | null;
   default_language?: string | null;
   currency?: string | null;
+  logo_url?: string | null;
+  brand_short_name?: string | null;
 }
 
 // ---------- Backend detection ----------
@@ -109,7 +115,9 @@ const ALTER_STORES_BRAND_PG = `
     ADD COLUMN IF NOT EXISTS brand_voice TEXT,
     ADD COLUMN IF NOT EXISTS value_props TEXT,
     ADD COLUMN IF NOT EXISTS default_language TEXT,
-    ADD COLUMN IF NOT EXISTS currency TEXT
+    ADD COLUMN IF NOT EXISTS currency TEXT,
+    ADD COLUMN IF NOT EXISTS logo_url TEXT,
+    ADD COLUMN IF NOT EXISTS brand_short_name TEXT
 `;
 
 async function ensurePgStoresSchema(): Promise<void> {
@@ -165,6 +173,8 @@ function rowToStore(row: Record<string, unknown>): Store {
     value_props: row.value_props ? String(row.value_props) : null,
     default_language: row.default_language ? String(row.default_language) : null,
     currency: row.currency ? String(row.currency) : null,
+    logo_url: row.logo_url ? String(row.logo_url) : null,
+    brand_short_name: row.brand_short_name ? String(row.brand_short_name) : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -246,6 +256,8 @@ export async function createStore(input: CreateStoreInput): Promise<Store> {
     value_props: null,
     default_language: null,
     currency: null,
+    logo_url: null,
+    brand_short_name: null,
     created_at: now,
     updated_at: now,
   };
@@ -326,6 +338,14 @@ export async function updateStore(
       sets.push(`currency = $${idx++}`);
       values.push(input.currency);
     }
+    if (input.logo_url !== undefined) {
+      sets.push(`logo_url = $${idx++}`);
+      values.push(input.logo_url);
+    }
+    if (input.brand_short_name !== undefined) {
+      sets.push(`brand_short_name = $${idx++}`);
+      values.push(input.brand_short_name);
+    }
 
     values.push(id);
     const result = await sql.query(
@@ -363,6 +383,8 @@ export async function updateStore(
   if (input.value_props !== undefined) store.value_props = input.value_props;
   if (input.default_language !== undefined) store.default_language = input.default_language;
   if (input.currency !== undefined) store.currency = input.currency;
+  if (input.logo_url !== undefined) store.logo_url = input.logo_url;
+  if (input.brand_short_name !== undefined) store.brand_short_name = input.brand_short_name;
   store.updated_at = new Date().toISOString();
   stores[idx] = store;
   fileWriteStores(stores);

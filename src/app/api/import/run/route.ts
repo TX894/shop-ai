@@ -3,10 +3,11 @@ import type { ImportOptions } from "@/types/import";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription, generateSeoBundle, type StoreContext } from "@/lib/translation-service";
-import { loadActiveStoreContext } from "@/lib/store-context";
+import { loadActiveStoreBundle, type ActiveStoreBundle } from "@/lib/store-context";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
+import { applyWatermark } from "@/lib/watermark";
 import { graphql, type PushResult } from "@/lib/shopify-admin";
 import { getStoreDomain } from "@/lib/shopify-auth";
 import { insertItem } from "@/lib/db";
@@ -43,8 +44,9 @@ export async function POST(req: NextRequest) {
       let failCount = 0;
       const failures: { handle: string; error: string }[] = [];
 
-      // Load store brand context once for the whole batch
-      const storeCtx: StoreContext | undefined = await loadActiveStoreContext();
+      // Load store brand bundle once for the whole batch
+      const storeBundle: ActiveStoreBundle | undefined = await loadActiveStoreBundle();
+      const storeCtx: StoreContext | undefined = storeBundle?.ctx;
 
       for (let i = 0; i < total; i++) {
         const handle = opts.selectedHandles[i];
@@ -246,6 +248,40 @@ export async function POST(req: NextRequest) {
                     });
                     // Fall back to original image
                   }
+                }
+              }
+
+              // 6c. Brand watermark — applied LAST so it survives every prior step.
+              // This is the headline Shopify-policy protection: every image leaves
+              // the pipeline carrying the active store's brand mark.
+              if (opts.watermarkEnabled && storeBundle && (storeBundle.logoUrl || storeBundle.brandShortName)) {
+                send({
+                  type: "step",
+                  step: "watermarking",
+                  productHandle: handle,
+                  productTitle: title,
+                  progress: { current: j + 1, total: imagesToProcess.length },
+                });
+                try {
+                  const wm = await applyWatermark({
+                    imageBase64: resultBase64,
+                    mimeType: resultMime,
+                    options: {
+                      logoUrl: storeBundle.logoUrl,
+                      brandShortName: storeBundle.brandShortName,
+                      position: opts.watermarkPosition,
+                      opacity: opts.watermarkOpacity,
+                      size: opts.watermarkSize,
+                    },
+                  });
+                  if (wm.applied) {
+                    resultBase64 = wm.imageBase64;
+                    resultMime = wm.mimeType;
+                  }
+                } catch (wmErr) {
+                  const msg = wmErr instanceof Error ? wmErr.message : "Watermark failed";
+                  console.error(`[import] Watermark ${j} failed for ${handle}: ${msg}`);
+                  send({ type: "step", step: "watermark-failed", productHandle: handle, error: msg });
                 }
               }
 

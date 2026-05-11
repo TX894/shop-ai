@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { Preset } from "@/types/preset";
 import type { ImportProductEvent } from "@/types/import";
-import { Languages, ImagePlus, Tag, DollarSign, Send, Sparkles, X, Check, Loader2, ChevronRight, Search } from "lucide-react";
+import { Languages, ImagePlus, Tag, DollarSign, Send, Sparkles, X, Check, Loader2, ChevronRight, Search, Shield } from "lucide-react";
 
 interface ImportModalProps {
   open: boolean;
@@ -32,9 +32,11 @@ interface ImportResult {
 type Phase = "config" | "importing" | "done";
 type TabId = "content" | "images" | "tags" | "pricing" | "publish";
 
+type WatermarkPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" | "bottom-strip";
+
 const TABS: { id: TabId; label: string; icon: typeof Languages }[] = [
   { id: "content", label: "Content & SEO", icon: Languages },
-  { id: "images", label: "Images", icon: ImagePlus },
+  { id: "images", label: "Images & Brand", icon: ImagePlus },
   { id: "tags", label: "Tags & Collections", icon: Tag },
   { id: "pricing", label: "Pricing", icon: DollarSign },
   { id: "publish", label: "Publish", icon: Send },
@@ -69,6 +71,15 @@ export default function ImportModal({
   const [seoEnabled, setSeoEnabled] = useState(true);
   const [aiImagesEnabled, setAiImagesEnabled] = useState(false);
   const [maxImages, setMaxImages] = useState(20);
+
+  // Watermark / Shopify policy safety
+  const [watermarkEnabled, setWatermarkEnabled] = useState(true);
+  const [watermarkPosition, setWatermarkPosition] = useState<WatermarkPosition>("bottom-right");
+  const [watermarkOpacity, setWatermarkOpacity] = useState(85);
+  const [watermarkSize, setWatermarkSize] = useState(16);
+
+  // Active store snapshot for the watermark preview
+  const [activeStore, setActiveStore] = useState<{ id: string; name: string; logo_url: string | null; brand_short_name: string | null } | null>(null);
 
   // AI image settings
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -121,6 +132,10 @@ export default function ImportModal({
     }).catch(() => {});
     fetch("/api/models?editing=true").then((r) => r.json()).then((data: { models: typeof imageModels }) => {
       setImageModels(data.models);
+    }).catch(() => {});
+    fetch("/api/stores").then((r) => r.json()).then((d) => {
+      const a = (d.stores ?? []).find((s: { is_active: boolean }) => s.is_active);
+      if (a) setActiveStore({ id: a.id, name: a.name, logo_url: a.logo_url, brand_short_name: a.brand_short_name });
     }).catch(() => {});
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -191,6 +206,10 @@ export default function ImportModal({
       aiImageCustomPrompt: aiImagesEnabled && customPrompt.trim() ? customPrompt.trim() : undefined,
       imageModel: aiImagesEnabled ? selectedModel : undefined,
       maxImages,
+      watermarkEnabled,
+      watermarkPosition,
+      watermarkOpacity: watermarkOpacity / 100,
+      watermarkSize: watermarkSize / 100,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       collectionIds: [...selectedCollectionIds],
       pricingMode,
@@ -245,6 +264,8 @@ export default function ImportModal({
                 fetching: "Fetching product...",
                 translating: "Translating text...",
                 "translating-images": "Translating text inside images...",
+                "watermarking": "Stamping brand watermark...",
+                "watermark-failed": "Watermark failed (image saved without)",
                 "translate-image-failed": "Image translation failed",
                 "enhancing-title": "Polishing title...",
                 "enhancing-description": "Writing description...",
@@ -365,6 +386,56 @@ export default function ImportModal({
 
               {tab === "images" && (
                 <>
+                  {/* SHOPIFY POLICY BANNER */}
+                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 flex gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white flex-shrink-0">
+                      <Shield size={14} />
+                    </div>
+                    <div className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+                      <strong className="text-stone-900 dark:text-stone-100">Shopify policy safety:</strong> using competitor / supplier photography verbatim is a DMCA risk. Combine the three toggles below — watermark + image-text translation + AI restyle — to substantially transform each image and reduce takedown risk.
+                    </div>
+                  </div>
+
+                  <SectionTitle title="Brand watermark" subtitle="Stamps your store logo (or brand name) onto every image. Critical compliance layer." />
+                  {!activeStore?.logo_url && !activeStore?.brand_short_name ? (
+                    <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300">
+                      No brand logo or short name yet for <strong>{activeStore?.name ?? "your store"}</strong>. Set them in <a href="/settings" className="underline font-medium">Settings → Brand Intelligence</a> before enabling the watermark.
+                    </div>
+                  ) : (
+                    <ToggleRow checked={watermarkEnabled} onChange={setWatermarkEnabled}
+                      title={`Stamp ${activeStore?.logo_url ? activeStore.name + " logo" : "“" + (activeStore?.brand_short_name ?? activeStore?.name) + "” text"} on every image`}
+                      desc="Applied LAST in the pipeline so it survives AI restyle + image translation." accent />
+                  )}
+                  {watermarkEnabled && (activeStore?.logo_url || activeStore?.brand_short_name) && (
+                    <div className="ml-9 -mt-2 space-y-3">
+                      <div>
+                        <Label>Position</Label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {([
+                            ["top-left", "Top L"],
+                            ["top-right", "Top R"],
+                            ["center", "Center"],
+                            ["bottom-left", "Bot L"],
+                            ["bottom-right", "Bot R"],
+                            ["bottom-strip", "Strip"],
+                          ] as const).map(([pos, label]) => (
+                            <button key={pos} onClick={() => setWatermarkPosition(pos as WatermarkPosition)} className={`text-xs py-1.5 px-2 rounded-lg border transition ${watermarkPosition === pos ? "border-violet-500 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 font-medium" : "border-stone-200 dark:border-stone-700 text-stone-600 hover:border-stone-300"}`}>{label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label>Opacity: {watermarkOpacity}%</Label>
+                          <input type="range" min={20} max={100} value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(parseInt(e.target.value, 10))} className="w-full" />
+                        </div>
+                        <div>
+                          <Label>Size: {watermarkSize}% of width</Label>
+                          <input type="range" min={5} max={40} value={watermarkSize} onChange={(e) => setWatermarkSize(parseInt(e.target.value, 10))} className="w-full" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <SectionTitle title="How many source images" subtitle="From the source product. Shopify accepts up to 250 per product." />
                   <div className="flex items-center gap-3">
                     <input type="range" min={1} max={30} value={maxImages} onChange={(e) => setMaxImages(parseInt(e.target.value, 10))} className="flex-1" />

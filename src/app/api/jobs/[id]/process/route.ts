@@ -10,10 +10,11 @@ import type { ImportOptions } from "@/types/import";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
-import { loadActiveStoreContext } from "@/lib/store-context";
+import { loadActiveStoreBundle } from "@/lib/store-context";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
+import { applyWatermark } from "@/lib/watermark";
 import { fetchWithRetry } from "@/lib/fetch-utils";
 import { saveImage } from "@/lib/storage";
 import {
@@ -395,7 +396,8 @@ async function processLegacyProduct(
   let description = product.body_html || "";
   const originalDescription = description;
 
-  const storeCtx = await loadActiveStoreContext();
+  const storeBundle = await loadActiveStoreBundle();
+  const storeCtx = storeBundle?.ctx;
 
   if (opts.translateEnabled && opts.language !== "en" && !budgetExceeded(startTime)) {
     try {
@@ -492,8 +494,8 @@ async function processLegacyProduct(
           const prompt = composePrompt({ preset, role, collection: opts.aiImageCollection, customPrompt: opts.aiImageCustomPrompt });
           try {
             const genResult = await generateImage({ modelSlug: opts.imageModel, prompt, sourceImageBase64: workingBase64, sourceMimeType: workingMime });
-            images.push({ role, originalUrl: img.src, resultBase64: genResult.imageBase64, resultMime: genResult.mimeType, aiGenerated: true, error: translateImageError });
-            continue;
+            workingBase64 = genResult.imageBase64;
+            workingMime = genResult.mimeType;
           } catch (aiErr) {
             const msg = aiErr instanceof Error ? aiErr.message : "AI failed";
             images.push({ role, originalUrl: img.src, resultBase64: workingBase64, resultMime: workingMime, aiGenerated: false, error: translateImageError ? `${translateImageError}; ${msg}` : msg });
@@ -501,6 +503,30 @@ async function processLegacyProduct(
           }
         }
       }
+
+      // Watermark as final step
+      if (opts.watermarkEnabled && storeBundle && (storeBundle.logoUrl || storeBundle.brandShortName) && !budgetExceeded(startTime)) {
+        try {
+          const wm = await applyWatermark({
+            imageBase64: workingBase64,
+            mimeType: workingMime,
+            options: {
+              logoUrl: storeBundle.logoUrl,
+              brandShortName: storeBundle.brandShortName,
+              position: opts.watermarkPosition,
+              opacity: opts.watermarkOpacity,
+              size: opts.watermarkSize,
+            },
+          });
+          if (wm.applied) {
+            workingBase64 = wm.imageBase64;
+            workingMime = wm.mimeType;
+          }
+        } catch (wmErr) {
+          console.error(`[jobs/process] Watermark ${j} failed for ${handle}:`, wmErr instanceof Error ? wmErr.message : wmErr);
+        }
+      }
+
       images.push({ role, originalUrl: img.src, resultBase64: workingBase64, resultMime: workingMime, aiGenerated: workingBase64 !== imgBase64, error: translateImageError });
     } catch (err) {
       images.push({ role, originalUrl: img.src, aiGenerated: false, error: err instanceof Error ? err.message : "Failed" });

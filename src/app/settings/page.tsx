@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Key, Store, Sparkles, Trash2, Pencil, Check, X as XIcon, Loader2 } from "lucide-react";
+import { Key, Store, Sparkles, Trash2, Pencil, Check, X as XIcon, Loader2, Shield, Upload, ImageIcon } from "lucide-react";
 import Header from "@/components/Header";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -29,6 +29,8 @@ interface StoreRow {
   value_props: string | null;
   default_language: string | null;
   currency: string | null;
+  logo_url: string | null;
+  brand_short_name: string | null;
   created_at: string;
 }
 
@@ -47,6 +49,7 @@ interface BrainForm {
   value_props: string;
   default_language: string;
   currency: string;
+  brand_short_name: string;
 }
 
 const EMPTY_STORE: StoreForm = { name: "", domain: "", client_id: "", client_secret: "" };
@@ -58,6 +61,7 @@ const EMPTY_BRAIN: BrainForm = {
   value_props: "",
   default_language: "pt",
   currency: "£",
+  brand_short_name: "",
 };
 
 const LANGUAGES = [
@@ -72,7 +76,7 @@ const LANGUAGES = [
 const CURRENCIES = ["£", "€", "$", "R$", "CHF", "kr"];
 
 // Sample copy to inspire the user — clicked to fill in
-const BRAIN_EXAMPLES: Record<string, BrainForm> = {
+const BRAIN_EXAMPLES: Record<string, Omit<BrainForm, "brand_short_name">> = {
   "luxury-watches": {
     brand_brief: "Curated men's automatic watches — affordable Swiss-style design without the markup of legacy brands.",
     niche: "Men's watches, watch enthusiasts, gift category, accessible luxury",
@@ -119,6 +123,7 @@ export default function SettingsPage() {
   // Brain (store intelligence)
   const [brain, setBrain] = useState<BrainForm>(EMPTY_BRAIN);
   const [savingBrain, setSavingBrain] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const activeStore = stores.find((s) => s.is_active) ?? null;
 
@@ -150,6 +155,7 @@ export default function SettingsPage() {
       value_props: activeStore.value_props ?? "",
       default_language: activeStore.default_language ?? "pt",
       currency: activeStore.currency ?? "£",
+      brand_short_name: activeStore.brand_short_name ?? "",
     });
   }, [activeStore?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -286,6 +292,7 @@ export default function SettingsPage() {
           value_props: brain.value_props.trim() || null,
           default_language: brain.default_language.trim() || null,
           currency: brain.currency.trim() || null,
+          brand_short_name: brain.brand_short_name.trim() || null,
         }),
       });
       const data = await res.json();
@@ -294,6 +301,32 @@ export default function SettingsPage() {
       await loadStores();
     } catch { toast.error("Network error"); }
     finally { setSavingBrain(false); }
+  }
+
+  async function handleLogoUpload(file: File) {
+    if (!activeStore) { toast.error("Activate a store first"); return; }
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (brain.brand_short_name.trim()) formData.append("brand_short_name", brain.brand_short_name.trim());
+      const res = await fetch(`/api/stores/${activeStore.id}/logo`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Upload failed"); return; }
+      toast.success("Logo uploaded");
+      await loadStores();
+    } catch { toast.error("Network error"); }
+    finally { setUploadingLogo(false); }
+  }
+
+  async function handleLogoDelete() {
+    if (!activeStore) return;
+    try {
+      const res = await fetch(`/api/stores/${activeStore.id}/logo`, { method: "DELETE" });
+      if (!res.ok) { toast.error("Failed to remove"); return; }
+      toast.success("Logo removed");
+      await loadStores();
+    } catch { toast.error("Network error"); }
   }
 
   // ── Render ────────────────────────────────────────────────────────
@@ -426,8 +459,69 @@ export default function SettingsPage() {
                           The more you fill in, the smarter every title, description, translation and SEO field becomes. Each field is fed verbatim into the model on every import. Saved per active store.
                         </p>
                         <div className="flex gap-2 mt-3">
-                          <button onClick={() => setBrain(BRAIN_EXAMPLES["luxury-watches"])} className="text-[11px] px-2.5 py-1 bg-white dark:bg-stone-900 border border-indigo-200 dark:border-indigo-700 rounded-full text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition">Fill: Luxury Watches</button>
-                          <button onClick={() => setBrain(BRAIN_EXAMPLES["wellness-recovery"])} className="text-[11px] px-2.5 py-1 bg-white dark:bg-stone-900 border border-indigo-200 dark:border-indigo-700 rounded-full text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition">Fill: Wellness</button>
+                          <button onClick={() => setBrain((b) => ({ ...BRAIN_EXAMPLES["luxury-watches"], brand_short_name: b.brand_short_name }))} className="text-[11px] px-2.5 py-1 bg-white dark:bg-stone-900 border border-indigo-200 dark:border-indigo-700 rounded-full text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition">Fill: Luxury Watches</button>
+                          <button onClick={() => setBrain((b) => ({ ...BRAIN_EXAMPLES["wellness-recovery"], brand_short_name: b.brand_short_name }))} className="text-[11px] px-2.5 py-1 bg-white dark:bg-stone-900 border border-indigo-200 dark:border-indigo-700 rounded-full text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition">Fill: Wellness</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Brand assets / Shopify policy ─────────────────── */}
+                  <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white flex-shrink-0">
+                        <Shield size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">Brand assets & Shopify-policy safety</h3>
+                        <p className="text-xs text-stone-600 dark:text-stone-400 mt-1 leading-relaxed">
+                          Shopify&apos;s <a href="https://www.shopify.com/legal/aup" target="_blank" rel="noopener" className="underline">Acceptable Use Policy</a> and <a href="https://www.shopify.com/legal/terms" target="_blank" rel="noopener" className="underline">ToS §7</a> require you to own or have rights to every image. Using competitor photography verbatim risks DMCA takedowns. We protect you with three layers: <strong>brand watermark</strong>, <strong>image translation</strong>, <strong>AI restyle</strong>. Upload a logo here — it&apos;s stamped on every imported image.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-4 items-start">
+                      {/* Logo preview / upload */}
+                      <div>
+                        <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1.5">Brand logo</label>
+                        <div className="aspect-square bg-stone-50 dark:bg-stone-800 border-2 border-dashed border-stone-300 dark:border-stone-700 rounded-xl overflow-hidden flex items-center justify-center relative group">
+                          {activeStore.logo_url ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={activeStore.logo_url} alt="Logo" className="max-w-full max-h-full object-contain p-3" />
+                              <button onClick={handleLogoDelete} className="absolute top-1.5 right-1.5 p-1.5 bg-white/90 dark:bg-stone-900/90 rounded-md text-red-600 opacity-0 group-hover:opacity-100 transition" title="Remove logo">
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="text-center text-stone-400">
+                              <ImageIcon className="mx-auto mb-1" size={28} />
+                              <p className="text-[10px]">No logo</p>
+                            </div>
+                          )}
+                          {uploadingLogo && (
+                            <div className="absolute inset-0 bg-white/80 dark:bg-stone-900/80 flex items-center justify-center">
+                              <Loader2 className="animate-spin text-indigo-600" size={20} />
+                            </div>
+                          )}
+                        </div>
+                        <label className="mt-2 block">
+                          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = ""; }} />
+                          <span className="inline-flex items-center justify-center w-full gap-1.5 text-xs px-3 py-1.5 bg-stone-900 dark:bg-stone-100 dark:text-stone-900 text-white rounded-lg hover:opacity-90 cursor-pointer transition">
+                            <Upload size={12} /> {activeStore.logo_url ? "Replace" : "Upload PNG"}
+                          </span>
+                        </label>
+                        <p className="text-[10px] text-stone-400 mt-1 leading-snug">PNG with alpha for best results. Max 5 MB.</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <Field label="Brand short name" hint="Used as a text fallback when there's no logo, and on the bottom-strip watermark style. Keep it punchy: just the brand name.">
+                          <input type="text" value={brain.brand_short_name} onChange={(e) => setBrain({ ...brain, brand_short_name: e.target.value })} placeholder={activeStore.name} className={inputCls} />
+                        </Field>
+                        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+                          <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                            <strong>Best practice:</strong> always enable image translation + AI restyle when importing from competitor / supplier stores. The watermark alone is not bullet-proof for trademarked goods.
+                          </p>
                         </div>
                       </div>
                     </div>

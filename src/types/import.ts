@@ -17,6 +17,14 @@ export interface ImportOptions {
   maxImages?: number;
   /** Generate SEO bundle (meta title, meta description, handle, tags, alt text) for each product. */
   seoEnabled?: boolean;
+  /** Stamp the active store's logo/brand onto every imported image. Critical for Shopify-policy safety when working from third-party photography. */
+  watermarkEnabled?: boolean;
+  /** Position of the watermark on each image. */
+  watermarkPosition?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" | "bottom-strip";
+  /** 0..1 opacity. */
+  watermarkOpacity?: number;
+  /** Watermark width as a fraction of the image width (0.05–0.5). */
+  watermarkSize?: number;
   tags: string[];
   collectionIds: string[];
   pricingMode: "original" | "fixed" | "markup";

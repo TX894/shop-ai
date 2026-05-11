@@ -3,10 +3,11 @@ import type { ImportOptions } from "@/types/import";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
-import { loadActiveStoreContext } from "@/lib/store-context";
+import { loadActiveStoreBundle } from "@/lib/store-context";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
+import { applyWatermark } from "@/lib/watermark";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,7 +36,8 @@ export async function POST(req: NextRequest) {
       }
 
       const total = opts.selectedHandles.length;
-      const storeCtx = await loadActiveStoreContext();
+      const storeBundle = await loadActiveStoreBundle();
+      const storeCtx = storeBundle?.ctx;
 
       for (let i = 0; i < total; i++) {
         const handle = opts.selectedHandles[i];
@@ -145,8 +147,8 @@ export async function POST(req: NextRequest) {
                       sourceImageBase64: workingBase64,
                       sourceMimeType: workingMime,
                     });
-                    images.push({ role, originalUrl: img.src, resultBase64: result.imageBase64, resultMime: result.mimeType, aiGenerated: true });
-                    continue;
+                    workingBase64 = result.imageBase64;
+                    workingMime = result.mimeType;
                   } catch (aiErr) {
                     const msg = aiErr instanceof Error ? aiErr.message : "AI failed";
                     images.push({ role, originalUrl: img.src, resultBase64: workingBase64, resultMime: workingMime, aiGenerated: false, error: msg });
@@ -154,7 +156,29 @@ export async function POST(req: NextRequest) {
                   }
                 }
               }
-              // No AI — use working image (translated if enabled, else original)
+
+              // Apply watermark as the final step (preview)
+              if (opts.watermarkEnabled && storeBundle && (storeBundle.logoUrl || storeBundle.brandShortName)) {
+                send({ type: "step", step: "watermarking", productHandle: handle, progress: { current: j + 1, total: imagesToProcess.length } });
+                try {
+                  const wm = await applyWatermark({
+                    imageBase64: workingBase64,
+                    mimeType: workingMime,
+                    options: {
+                      logoUrl: storeBundle.logoUrl,
+                      brandShortName: storeBundle.brandShortName,
+                      position: opts.watermarkPosition,
+                      opacity: opts.watermarkOpacity,
+                      size: opts.watermarkSize,
+                    },
+                  });
+                  if (wm.applied) {
+                    workingBase64 = wm.imageBase64;
+                    workingMime = wm.mimeType;
+                  }
+                } catch { /* keep working image */ }
+              }
+
               images.push({ role, originalUrl: img.src, resultBase64: workingBase64, resultMime: workingMime, aiGenerated: workingBase64 !== imgBase64 });
             } catch (err) {
               images.push({ role, originalUrl: img.src, aiGenerated: false, error: err instanceof Error ? err.message : "Failed" });
