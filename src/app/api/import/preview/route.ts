@@ -3,6 +3,7 @@ import type { ImportOptions } from "@/types/import";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
+import { loadActiveStoreContext } from "@/lib/store-context";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
       }
 
       const total = opts.selectedHandles.length;
+      const storeCtx = await loadActiveStoreContext();
 
       for (let i = 0; i < total; i++) {
         const handle = opts.selectedHandles[i];
@@ -58,11 +60,11 @@ export async function POST(req: NextRequest) {
           if (opts.translateEnabled && opts.language !== "en") {
             send({ type: "step", step: "translating", productHandle: handle });
             try {
-              title = await translateText(title, opts.language);
+              title = await translateText(title, opts.language, storeCtx);
               if (description) {
                 const plain = description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
                 if (plain.length > 5) {
-                  const translated = await translateText(plain, opts.language);
+                  const translated = await translateText(plain, opts.language, storeCtx);
                   if (translated && translated.length > 10) description = `<p>${translated}</p>`;
                 }
               }
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
           if (opts.enhanceTitleEnabled) {
             send({ type: "step", step: "enhancing-title", productHandle: handle });
             try {
-              const enhanced = await enhanceTitle(title, opts.language, product.product_type);
+              const enhanced = await enhanceTitle(title, opts.language, product.product_type, storeCtx);
               if (enhanced && enhanced.length > 5) title = enhanced;
             } catch { /* keep current */ }
           }
@@ -82,8 +84,7 @@ export async function POST(req: NextRequest) {
           if (opts.enhanceDescriptionEnabled) {
             send({ type: "step", step: "enhancing-description", productHandle: handle });
             try {
-              const plain = description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-              const enhanced = await enhanceDescription(plain, title, opts.language);
+              const enhanced = await enhanceDescription(description, title, opts.language, storeCtx);
               if (enhanced && enhanced.length > 10) description = enhanced;
             } catch { /* keep current */ }
           }
@@ -94,11 +95,12 @@ export async function POST(req: NextRequest) {
 
           // Process images
           const images: { role: string; originalUrl: string; resultBase64?: string; resultMime?: string; aiGenerated: boolean; error?: string }[] = [];
-          const imagesToProcess = product.images.slice(0, 3);
+          const cap = Math.max(1, Math.min(opts.maxImages ?? 20, 50));
+          const imagesToProcess = product.images.slice(0, cap);
 
           for (let j = 0; j < imagesToProcess.length; j++) {
             const img = imagesToProcess[j];
-            const role = DEFAULT_ROLES[j] ?? "hero";
+            const role: ImageRole = j === 0 ? "hero" : j === 2 ? "lifestyle" : "detail";
             send({ type: "step", step: "generating-images", productHandle: handle, progress: { current: j + 1, total: imagesToProcess.length } });
 
             try {

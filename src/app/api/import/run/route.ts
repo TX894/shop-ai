@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import type { ImportOptions } from "@/types/import";
 import type { ShopifyProduct } from "@/types/shopify";
 import type { ImageRole } from "@/types/preset";
-import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
+import { translateText, enhanceTitle, enhanceDescription, generateSeoBundle, type StoreContext } from "@/lib/translation-service";
+import { loadActiveStoreContext } from "@/lib/store-context";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
       let failCount = 0;
       const failures: { handle: string; error: string }[] = [];
 
+      // Load store brand context once for the whole batch
+      const storeCtx: StoreContext | undefined = await loadActiveStoreContext();
+
       for (let i = 0; i < total; i++) {
         const handle = opts.selectedHandles[i];
         send({
@@ -71,12 +75,12 @@ export async function POST(req: NextRequest) {
           if (opts.translateEnabled && opts.language !== "en") {
             send({ type: "step", step: "translating", productHandle: handle, productTitle: title });
             try {
-              title = await translateText(title, opts.language);
+              title = await translateText(title, opts.language, storeCtx);
               if (description) {
                 // Strip complex HTML to plain text for better translation
                 const plainDesc = description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
                 if (plainDesc.length > 5) {
-                  const translated = await translateText(plainDesc, opts.language);
+                  const translated = await translateText(plainDesc, opts.language, storeCtx);
                   if (translated && translated.length > 10) {
                     description = `<p>${translated}</p>`;
                   }
@@ -92,7 +96,7 @@ export async function POST(req: NextRequest) {
           if (opts.enhanceTitleEnabled) {
             send({ type: "step", step: "enhancing-title", productHandle: handle, productTitle: title });
             try {
-              const enhanced = await enhanceTitle(title, opts.language, product.product_type);
+              const enhanced = await enhanceTitle(title, opts.language, product.product_type, storeCtx);
               if (enhanced && enhanced.length > 5) title = enhanced;
             } catch (err) {
               console.error(`[import] Enhance title failed for ${handle}:`, err instanceof Error ? err.message : err);
@@ -103,13 +107,23 @@ export async function POST(req: NextRequest) {
           if (opts.enhanceDescriptionEnabled) {
             send({ type: "step", step: "enhancing-description", productHandle: handle, productTitle: title });
             try {
-              const plainDesc = description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-              const enhanced = await enhanceDescription(plainDesc, title, opts.language);
+              const enhanced = await enhanceDescription(description, title, opts.language, storeCtx);
               if (enhanced && enhanced.length > 10) {
                 description = enhanced;
               }
             } catch (err) {
               console.error(`[import] Enhance description failed for ${handle}:`, err instanceof Error ? err.message : err);
+            }
+          }
+
+          // 4b. Generate SEO bundle (meta title/desc, handle, tags, alt) if requested
+          let seoBundle: Awaited<ReturnType<typeof generateSeoBundle>> = null;
+          if (opts.seoEnabled) {
+            send({ type: "step", step: "seo-bundle", productHandle: handle, productTitle: title });
+            try {
+              seoBundle = await generateSeoBundle(title, description, opts.language, storeCtx);
+            } catch (err) {
+              console.error(`[import] SEO bundle failed for ${handle}:`, err instanceof Error ? err.message : err);
             }
           }
 
@@ -134,11 +148,13 @@ export async function POST(req: NextRequest) {
 
           // 6. Process images (AI or original)
           const libraryItemIds: string[] = [];
-          const imagesToProcess = product.images.slice(0, 3);
+          const cap = Math.max(1, Math.min(opts.maxImages ?? 20, 50));
+          const imagesToProcess = product.images.slice(0, cap);
 
           for (let j = 0; j < imagesToProcess.length; j++) {
             const img = imagesToProcess[j];
-            const role = DEFAULT_ROLES[j] ?? "hero";
+            // j=0 → hero, j=1 → detail, j=2 → lifestyle, j>=3 → detail (multiple angles/detail shots)
+            const role: ImageRole = j === 0 ? "hero" : j === 2 ? "lifestyle" : "detail";
 
             send({
               type: "step",
@@ -262,6 +278,14 @@ export async function POST(req: NextRequest) {
           // 7. Create Shopify product
           send({ type: "step", step: "creating-shopify", productHandle: handle, productTitle: title });
 
+          // Merge SEO bundle tags with user-provided tags (dedupe)
+          const mergedTags = Array.from(
+            new Set([
+              ...opts.tags,
+              ...(seoBundle?.tags ?? []),
+            ])
+          );
+
           const pushResult = await createShopifyProduct(
             libraryItemIds,
             {
@@ -270,8 +294,12 @@ export async function POST(req: NextRequest) {
               priceGBP: price,
               vendor: product.vendor || "",
               productType: product.product_type || "",
-              tags: opts.tags,
+              tags: mergedTags,
               status: opts.productStatus,
+              seoTitle: seoBundle?.metaTitle,
+              seoDescription: seoBundle?.metaDescription,
+              handle: seoBundle?.handle,
+              imageAltText: seoBundle?.altText,
             },
             opts.collectionIds
           );
@@ -337,6 +365,10 @@ async function createShopifyProduct(
     productType: string;
     tags: string[];
     status: "DRAFT" | "ACTIVE";
+    seoTitle?: string;
+    seoDescription?: string;
+    handle?: string;
+    imageAltText?: string;
   },
   collectionIds: string[]
 ): Promise<PushResult> {
@@ -350,6 +382,10 @@ async function createShopifyProduct(
     productType: details.productType,
     tags: details.tags,
     status: details.status,
+    seoTitle: details.seoTitle,
+    seoDescription: details.seoDescription,
+    handle: details.handle,
+    imageAltText: details.imageAltText,
   });
 
   // Add to collections

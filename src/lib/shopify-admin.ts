@@ -19,6 +19,14 @@ export interface ProductDetails {
   productType?: string;
   tags?: string[];
   status?: "DRAFT" | "ACTIVE";
+  /** SEO meta title (50-60 chars). Set via productCreate `seo` input. */
+  seoTitle?: string;
+  /** SEO meta description (140-160 chars). Set via productCreate `seo` input. */
+  seoDescription?: string;
+  /** URL handle slug. Shopify will dedupe by appending -1, -2 if taken. */
+  handle?: string;
+  /** Alt text used for ALL uploaded images (override individual notes). */
+  imageAltText?: string;
 }
 
 export interface PushResult {
@@ -151,6 +159,15 @@ export async function pushProduct(
         productType: details.productType ?? "",
         tags: details.tags ?? [],
         status: details.status ?? "DRAFT",
+        ...(details.handle ? { handle: details.handle } : {}),
+        ...(details.seoTitle || details.seoDescription
+          ? {
+              seo: {
+                ...(details.seoTitle ? { title: details.seoTitle } : {}),
+                ...(details.seoDescription ? { description: details.seoDescription } : {}),
+              },
+            }
+          : {}),
       },
     }
   );
@@ -200,11 +217,19 @@ export async function pushProduct(
 
     const variantErrors = variantData.productVariantsBulkUpdate.userErrors;
     if (variantErrors.length > 0) {
-      console.error(
-        "[shopify-admin] Variant price update errors:",
-        variantErrors.map((e) => e.message).join("; ")
-      );
+      const msg = variantErrors.map((e) => e.message).join("; ");
+      console.error("[shopify-admin] Variant price update FAILED:", msg);
+      throw new Error(`Shopify rejected price ${details.priceGBP}: ${msg}`);
     }
+
+    const updatedVariant = variantData.productVariantsBulkUpdate.productVariants?.[0];
+    console.log(
+      `[shopify-admin] Variant ${defaultVariantId} priced at ${updatedVariant?.price ?? "?"}`
+    );
+  } else if (details.priceGBP && !defaultVariantId) {
+    console.warn(
+      `[shopify-admin] priceGBP=${details.priceGBP} provided but no default variant returned from productCreate. Price NOT set.`
+    );
   }
 
   // 2. Upload images
@@ -214,7 +239,7 @@ export async function pushProduct(
     onProgress?.(`A fazer upload da imagem ${i + 1} de ${libraryItemIds.length}...`);
 
     try {
-      await uploadImageToProduct(productGid, itemId);
+      await uploadImageToProduct(productGid, itemId, details.imageAltText);
       imagesUploaded++;
     } catch (err) {
       console.error(
@@ -244,7 +269,8 @@ export async function pushProduct(
 
 async function uploadImageToProduct(
   productGid: string,
-  libraryItemId: string
+  libraryItemId: string,
+  altOverride?: string
 ): Promise<void> {
   const item = await getItem(libraryItemId);
   if (!item) throw new Error(`Library item ${libraryItemId} not found`);
@@ -351,7 +377,7 @@ async function uploadImageToProduct(
         {
           originalSource: target.resourceUrl,
           mediaContentType: "IMAGE",
-          alt: item.notes ?? "Product image",
+          alt: altOverride ?? item.notes ?? "Product image",
         },
       ],
     }

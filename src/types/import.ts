@@ -11,8 +11,12 @@ export interface ImportOptions {
   imageModel?: string;
   /** Translate every visible text in each product image into `language`. */
   translateImagesEnabled?: boolean;
-  /** Model slug used for image-text translation. Defaults to nano-banana-edit. */
+  /** Model slug used for image-text translation. Defaults to nano-banana-2. */
   translateImagesModel?: string;
+  /** Max number of source images to import per product. Defaults to 20 (Shopify supports up to 250 per product, but we cap to fit Vercel runtime). */
+  maxImages?: number;
+  /** Generate SEO bundle (meta title, meta description, handle, tags, alt text) for each product. */
+  seoEnabled?: boolean;
   tags: string[];
   collectionIds: string[];
   pricingMode: "original" | "fixed" | "markup";

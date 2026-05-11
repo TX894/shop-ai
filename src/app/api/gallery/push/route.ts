@@ -74,13 +74,21 @@ export async function POST(req: NextRequest) {
       // 1. Create product on Shopify
       const createData = await graphql<{
         productCreate: {
-          product: { id: string; handle: string; status: string } | null;
+          product: {
+            id: string;
+            handle: string;
+            status: string;
+            variants: { edges: { node: { id: string } }[] };
+          } | null;
           userErrors: { field: string[]; message: string }[];
         };
       }>(
         `mutation productCreate($input: ProductInput!) {
           productCreate(input: $input) {
-            product { id handle status }
+            product {
+              id handle status
+              variants(first: 1) { edges { node { id } } }
+            }
             userErrors { field message }
           }
         }`,
@@ -110,6 +118,34 @@ export async function POST(req: NextRequest) {
       if (!product) {
         results.push({ draftId, handle: draft.handle, success: false, error: "No product returned" });
         continue;
+      }
+
+      // 1b. Set price on default variant if draft has one
+      const defaultVariantId = product.variants.edges[0]?.node?.id;
+      if (defaultVariantId && draft.price && draft.price !== "0.00") {
+        try {
+          const variantData = await graphql<{
+            productVariantsBulkUpdate: {
+              userErrors: { field: string[]; message: string }[];
+            };
+          }>(
+            `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                userErrors { field message }
+              }
+            }`,
+            {
+              productId: product.id,
+              variants: [{ id: defaultVariantId, price: draft.price }],
+            }
+          );
+          const verrs = variantData.productVariantsBulkUpdate.userErrors;
+          if (verrs.length > 0) {
+            console.error(`[gallery/push] Price update failed for ${draft.handle}: ${verrs.map((e) => e.message).join("; ")}`);
+          }
+        } catch (priceErr) {
+          console.error(`[gallery/push] Price update threw for ${draft.handle}:`, priceErr);
+        }
       }
 
       // 2. Upload each approved slot image (in slot_order)
