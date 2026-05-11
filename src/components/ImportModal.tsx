@@ -41,7 +41,7 @@ export default function ImportModal({
   const [language, setLanguage] = useState("pt");
   const [translateEnabled, setTranslateEnabled] = useState(true);
   const [translateImagesEnabled, setTranslateImagesEnabled] = useState(false);
-  const [translateImagesModel, setTranslateImagesModel] = useState("nano-banana-edit");
+  const [translateImagesModel, setTranslateImagesModel] = useState("nano-banana-2");
   const [enhanceTitleEnabled, setEnhanceTitleEnabled] = useState(false);
   const [enhanceDescEnabled, setEnhanceDescEnabled] = useState(false);
   const [aiImagesEnabled, setAiImagesEnabled] = useState(true);
@@ -364,7 +364,7 @@ export default function ImportModal({
                       ))}
                     </select>
                     <p className="text-[10px] text-stone-400 mt-0.5">
-                      Tip: <strong>Nano Banana Edit</strong> is cheap and quick. Use <strong>Nano Banana 2</strong> or <strong>Flux Kontext Max</strong> for more typography-heavy images.
+                      Tip: <strong>Nano Banana 2</strong> (default) handles text replacement and screen mockups well. <strong>Nano Banana Edit</strong> is cheaper but often misses duplicated text or mockup screens. <strong>Flux Kontext Max</strong> for the hardest cases.
                     </p>
                   </div>
                 )}

@@ -20,7 +20,7 @@ const LANG_NAMES: Record<string, string> = {
   it: "Italian",
 };
 
-export const DEFAULT_TRANSLATION_MODEL = "nano-banana-edit";
+export const DEFAULT_TRANSLATION_MODEL = "nano-banana-2";
 
 export interface TranslateImageArgs {
   imageBase64: string;
@@ -41,18 +41,44 @@ export interface TranslateImageResult {
 
 function buildPrompt(targetLang: string): string {
   const langName = LANG_NAMES[targetLang] ?? targetLang;
-  return `Translate every visible piece of text in this product photo into ${langName}.
+  return `Your task: translate EVERY visible piece of text in this product image into natural, well-written ${langName}.
 
-Hard rules:
-- Keep the photo identical apart from the text content. Do not alter the product, lighting, colours, background, layout, perspective, or composition.
-- Preserve the original font family, weight, size, colour, stroke, shadow, alignment and positioning of each text block.
-- Replace each text element in place. The translated text must occupy the same area as the original.
-- If a translation is longer than the original, scale the type proportionally so it still fits the same space — never reflow elements or move other items to make room.
-- Keep numbers, prices, currency symbols, SKUs, URLs, brand names and trademarks exactly as they are.
-- Do not add new text, captions, banners, watermarks, logos or stickers.
-- If the image contains no readable text, return it unchanged.
+WHERE TO LOOK FOR TEXT — translate text in ALL of these locations:
+- On the main product (book covers, packaging, labels, tags, stickers)
+- On banners, callouts, badges, ribbons, price tags
+- Inside ANY phone screen, tablet screen, laptop screen, or device mockup shown in the image
+- On printed materials (boxes, leaflets, instructions, posters) visible in the scene
+- Any caption, headline, subtitle, tagline, bullet point, or body copy
 
-Output only the edited image.`;
+WHAT TO TRANSLATE — translate aggressively:
+- Product titles ("Carpal Tunnel Recovery Blueprint" → translate it)
+- Marketing taglines ("THE AT-HOME", "Simple, Effective Strategies", "Best Seller")
+- Headlines, subtitles, descriptions, instructions
+- Generic English phrases of any kind
+- If the same text appears in TWO places (e.g. on the product AND on a phone-screen mockup), translate BOTH instances identically
+
+WHAT TO KEEP UNCHANGED — only these:
+- Numerals and digits (2024, 50%, 3X, etc.)
+- Currency symbols and prices ($19.99, £29, €15)
+- URLs, email addresses, @handles, hashtags
+- SKU/product codes
+- Real registered company brand names ONLY (e.g. Nike, Apple, Sony, Shopify). A product name or descriptive phrase is NOT a brand — translate it.
+
+VISUAL RULES — the rest of the image must stay PIXEL-PERFECT:
+- Same product, same pose, same materials, same colours
+- Same background, lighting, shadows, perspective and composition
+- Same fonts, font weights, colours, strokes and drop-shadows on each text block
+- Same positioning and alignment of each text element
+- If a translation is longer than the original, shrink the type proportionally so it fits the same area — DO NOT move or reflow other elements
+- Do not add new text, watermarks, logos or stickers that were not there before
+- Do not redraw or restyle the product
+
+EDGE CASES:
+- If the image contains zero readable text, return it completely unchanged
+- If text is partly cut off or stylised, still translate the readable portion
+- Preserve ALL CAPS / Title Case / lowercase styling per text block
+
+Output ONLY the edited image — no captions, no annotations, no extra text in the response.`;
 }
 
 export async function translateImage(
