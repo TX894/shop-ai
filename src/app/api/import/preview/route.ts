@@ -5,6 +5,7 @@ import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
+import { translateImage } from "@/lib/image-translation";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -110,6 +111,27 @@ export async function POST(req: NextRequest) {
               const imgBase64 = imgBuffer.toString("base64");
               const imgMime = imgRes.headers.get("content-type") || "image/png";
 
+              let workingBase64 = imgBase64;
+              let workingMime = imgMime;
+
+              if (opts.translateImagesEnabled && opts.language) {
+                send({ type: "step", step: "translating-images", productHandle: handle, progress: { current: j + 1, total: imagesToProcess.length } });
+                try {
+                  const translated = await translateImage({
+                    imageBase64: workingBase64,
+                    mimeType: workingMime,
+                    targetLang: opts.language,
+                    modelSlug: opts.translateImagesModel,
+                  });
+                  workingBase64 = translated.imageBase64;
+                  workingMime = translated.mimeType;
+                } catch (trErr) {
+                  const trMsg = trErr instanceof Error ? trErr.message : "Image translation failed";
+                  console.error(`[preview] Image translation ${j} failed for ${handle}: ${trMsg}`);
+                  send({ type: "step", step: "translate-image-failed", productHandle: handle, error: trMsg });
+                }
+              }
+
               if (opts.aiImagesEnabled && opts.aiImagePresetId) {
                 const preset = await getPreset(opts.aiImagePresetId);
                 if (preset) {
@@ -118,20 +140,20 @@ export async function POST(req: NextRequest) {
                     const result = await generateImage({
                       modelSlug: opts.imageModel,
                       prompt,
-                      sourceImageBase64: imgBase64,
-                      sourceMimeType: imgMime,
+                      sourceImageBase64: workingBase64,
+                      sourceMimeType: workingMime,
                     });
                     images.push({ role, originalUrl: img.src, resultBase64: result.imageBase64, resultMime: result.mimeType, aiGenerated: true });
                     continue;
                   } catch (aiErr) {
                     const msg = aiErr instanceof Error ? aiErr.message : "AI failed";
-                    images.push({ role, originalUrl: img.src, resultBase64: imgBase64, resultMime: imgMime, aiGenerated: false, error: msg });
+                    images.push({ role, originalUrl: img.src, resultBase64: workingBase64, resultMime: workingMime, aiGenerated: false, error: msg });
                     continue;
                   }
                 }
               }
-              // No AI — use original
-              images.push({ role, originalUrl: img.src, resultBase64: imgBase64, resultMime: imgMime, aiGenerated: false });
+              // No AI — use working image (translated if enabled, else original)
+              images.push({ role, originalUrl: img.src, resultBase64: workingBase64, resultMime: workingMime, aiGenerated: workingBase64 !== imgBase64 });
             } catch (err) {
               images.push({ role, originalUrl: img.src, aiGenerated: false, error: err instanceof Error ? err.message : "Failed" });
             }

@@ -5,6 +5,7 @@ import type { ImageRole } from "@/types/preset";
 import { translateText, enhanceTitle, enhanceDescription } from "@/lib/translation-service";
 import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
+import { translateImage } from "@/lib/image-translation";
 import { graphql, type PushResult } from "@/lib/shopify-admin";
 import { getStoreDomain } from "@/lib/shopify-auth";
 import { insertItem } from "@/lib/db";
@@ -165,6 +166,38 @@ export async function POST(req: NextRequest) {
               let promptUsed: string | undefined;
               let aiImageFailed = false;
 
+              // 6a. Translate text inside the image, if enabled.
+              // Done before AI restyle so the restyle preserves the new translated text.
+              if (opts.translateImagesEnabled && opts.language) {
+                send({
+                  type: "step",
+                  step: "translating-images",
+                  productHandle: handle,
+                  productTitle: title,
+                  progress: { current: j + 1, total: imagesToProcess.length },
+                });
+                try {
+                  const translated = await translateImage({
+                    imageBase64: resultBase64,
+                    mimeType: resultMime,
+                    targetLang: opts.language,
+                    modelSlug: opts.translateImagesModel,
+                  });
+                  resultBase64 = translated.imageBase64;
+                  resultMime = translated.mimeType;
+                } catch (trErr) {
+                  const trMsg = trErr instanceof Error ? trErr.message : "Image translation failed";
+                  console.error(`[import] Image translation ${j} failed for ${handle}: ${trMsg}`);
+                  send({
+                    type: "step",
+                    step: "translate-image-failed",
+                    productHandle: handle,
+                    error: trMsg,
+                  });
+                  // Fall through with original image
+                }
+              }
+
               if (opts.aiImagesEnabled && opts.aiImagePresetId) {
                 const preset = await getPreset(opts.aiImagePresetId);
                 if (preset) {
@@ -180,8 +213,8 @@ export async function POST(req: NextRequest) {
                     const genResult = await generateImage({
                       modelSlug: opts.imageModel,
                       prompt,
-                      sourceImageBase64: imgBase64,
-                      sourceMimeType: imgMime,
+                      sourceImageBase64: resultBase64,
+                      sourceMimeType: resultMime,
                     });
                     resultBase64 = genResult.imageBase64;
                     resultMime = genResult.mimeType;

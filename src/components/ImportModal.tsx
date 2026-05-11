@@ -40,6 +40,8 @@ export default function ImportModal({
   // Options state
   const [language, setLanguage] = useState("pt");
   const [translateEnabled, setTranslateEnabled] = useState(true);
+  const [translateImagesEnabled, setTranslateImagesEnabled] = useState(false);
+  const [translateImagesModel, setTranslateImagesModel] = useState("nano-banana-edit");
   const [enhanceTitleEnabled, setEnhanceTitleEnabled] = useState(false);
   const [enhanceDescEnabled, setEnhanceDescEnabled] = useState(false);
   const [aiImagesEnabled, setAiImagesEnabled] = useState(true);
@@ -153,10 +155,12 @@ export default function ImportModal({
   const count = modalSelected.size;
   const avgImages = 3;
   const modelCredits = imageModels.find((m) => m.slug === selectedModel)?.creditsPerImage ?? 4;
+  const translateImagesCredits = imageModels.find((m) => m.slug === translateImagesModel)?.creditsPerImage ?? 4;
   const aiImageCost = aiImagesEnabled ? count * avgImages * modelCredits * 0.01 : 0;
+  const translateImagesCost = translateImagesEnabled ? count * avgImages * translateImagesCredits * 0.01 : 0;
   const translateCost = translateEnabled ? count * 0.004 : 0;
   const enhanceCost = (enhanceTitleEnabled ? count * 0.002 : 0) + (enhanceDescEnabled ? count * 0.003 : 0);
-  const totalCost = aiImageCost + translateCost + enhanceCost;
+  const totalCost = aiImageCost + translateImagesCost + translateCost + enhanceCost;
 
   async function handleImport() {
     setPhase("importing");
@@ -173,6 +177,8 @@ export default function ImportModal({
           sourceStore,
           language,
           translateEnabled,
+          translateImagesEnabled,
+          translateImagesModel: translateImagesEnabled ? translateImagesModel : undefined,
           enhanceTitleEnabled,
           enhanceDescriptionEnabled: enhanceDescEnabled,
           aiImagesEnabled,
@@ -219,10 +225,13 @@ export default function ImportModal({
               const stepLabels: Record<string, string> = {
                 fetching: "A buscar dados...",
                 translating: "A traduzir...",
+                "translating-images": "A traduzir texto nas imagens...",
+                "translate-image-failed": "Tradução de imagem falhou (a manter original)",
                 "enhancing-title": "A melhorar título...",
                 "enhancing-description": "A melhorar descrição...",
                 "generating-images": "A gerar imagens AI...",
                 "downloading-images": "A descarregar imagens...",
+                "ai-image-failed": "Geração AI falhou (a manter original)",
                 "creating-shopify": "A criar no Shopify...",
               };
               setCurrentStep(stepLabels[event.step ?? ""] ?? event.step ?? "");
@@ -307,6 +316,10 @@ export default function ImportModal({
                 <input type="checkbox" checked={translateEnabled} onChange={(e) => setTranslateEnabled(e.target.checked)} className="rounded" />
                 Translate
               </label>
+              <label className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer" title="Re-render every visible text inside each product image in the chosen language, preserving fonts and layout.">
+                <input type="checkbox" checked={translateImagesEnabled} onChange={(e) => setTranslateImagesEnabled(e.target.checked)} className="rounded" />
+                Translate Images
+              </label>
               <label className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
                 <input type="checkbox" checked={enhanceTitleEnabled} onChange={(e) => setEnhanceTitleEnabled(e.target.checked)} className="rounded" />
                 Enhance Title
@@ -331,6 +344,31 @@ export default function ImportModal({
 
             {showOptions && (
               <div className="space-y-5 border border-stone-200 rounded-lg p-4 bg-stone-50">
+                {/* Translate Images section */}
+                {translateImagesEnabled && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-medium text-stone-600 uppercase tracking-wide">Translate Images</h3>
+                    <p className="text-[10px] text-stone-500 leading-snug">
+                      Each product image is sent through an editor model that rewrites every visible word into the chosen language, keeping fonts, colours and layout.
+                    </p>
+                    <label className="block text-xs text-stone-500 mb-1">Translator Model</label>
+                    <select
+                      value={translateImagesModel}
+                      onChange={(e) => setTranslateImagesModel(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm bg-white"
+                    >
+                      {imageModels.map((m) => (
+                        <option key={m.slug} value={m.slug}>
+                          {m.displayName} ({m.creditsPerImage} credits)
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-stone-400 mt-0.5">
+                      Tip: <strong>Nano Banana Edit</strong> is cheap and quick. Use <strong>Nano Banana 2</strong> or <strong>Flux Kontext Max</strong> for more typography-heavy images.
+                    </p>
+                  </div>
+                )}
+
                 {/* AI Images section */}
                 {aiImagesEnabled && (
                   <div className="space-y-3">
@@ -526,7 +564,8 @@ export default function ImportModal({
             <div className="text-xs text-stone-500 bg-stone-50 rounded p-3">
               Estimated cost: ~${totalCost.toFixed(2)}
               {aiImagesEnabled && ` (AI images: $${aiImageCost.toFixed(2)})`}
-              {translateEnabled && ` (Translation: $${translateCost.toFixed(3)})`}
+              {translateImagesEnabled && ` (Image translation: $${translateImagesCost.toFixed(2)})`}
+              {translateEnabled && ` (Text translation: $${translateCost.toFixed(3)})`}
               {(enhanceTitleEnabled || enhanceDescEnabled) && ` (Enhancement: $${enhanceCost.toFixed(3)})`}
             </div>
 
@@ -563,12 +602,15 @@ export default function ImportModal({
                       sourceStore,
                       language,
                       translateEnabled,
+                      translateImagesEnabled,
+                      translateImagesModel: translateImagesEnabled ? translateImagesModel : undefined,
                       enhanceTitleEnabled,
                       enhanceDescriptionEnabled: enhanceDescEnabled,
                       aiImagesEnabled,
                       aiImagePresetId: aiImagesEnabled ? selectedPresetId : undefined,
                       aiImageCollection: aiImagesEnabled ? selectedCollection : undefined,
                       aiImageCustomPrompt: aiImagesEnabled && customPrompt.trim() ? customPrompt.trim() : undefined,
+                      imageModel: aiImagesEnabled ? selectedModel : undefined,
                       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
                       collectionIds: [...selectedCollectionIds],
                       pricingMode,

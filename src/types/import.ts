@@ -9,6 +9,10 @@ export interface ImportOptions {
   aiImageCollection?: string;
   aiImageCustomPrompt?: string;
   imageModel?: string;
+  /** Translate every visible text in each product image into `language`. */
+  translateImagesEnabled?: boolean;
+  /** Model slug used for image-text translation. Defaults to nano-banana-edit. */
+  translateImagesModel?: string;
   tags: string[];
   collectionIds: string[];
   pricingMode: "original" | "fixed" | "markup";
