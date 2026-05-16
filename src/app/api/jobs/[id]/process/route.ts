@@ -32,7 +32,6 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const BUDGET_MS = 270_000; // 270s budget within 300s maxDuration (Pro plan)
-const DEFAULT_ROLES: ImageRole[] = ["hero", "detail", "lifestyle"];
 
 export async function POST(
   _req: NextRequest,

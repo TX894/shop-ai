@@ -16,8 +16,6 @@ import { saveImage, generateId } from "@/lib/storage";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const DEFAULT_ROLES: ImageRole[] = ["hero", "detail", "lifestyle"];
-
 export async function POST(req: NextRequest) {
   let opts: ImportOptions;
   try {

@@ -64,7 +64,8 @@ export default function ImportModal({
   // ── Options ───────────────────────────────────────────────────────
   const [language, setLanguage] = useState("pt");
   const [translateEnabled, setTranslateEnabled] = useState(true);
-  const [translateImagesEnabled, setTranslateImagesEnabled] = useState(false);
+  // ON by default — image text translation is a key Shopify-policy safety layer
+  const [translateImagesEnabled, setTranslateImagesEnabled] = useState(true);
   const [translateImagesModel, setTranslateImagesModel] = useState("nano-banana-2");
   const [enhanceTitleEnabled, setEnhanceTitleEnabled] = useState(true);
   const [enhanceDescEnabled, setEnhanceDescEnabled] = useState(true);
