@@ -71,7 +71,10 @@ export default function ImportModal({
   const [enhanceDescEnabled, setEnhanceDescEnabled] = useState(true);
   const [seoEnabled, setSeoEnabled] = useState(true);
   const [aiImagesEnabled, setAiImagesEnabled] = useState(false);
-  const [maxImages, setMaxImages] = useState(20);
+  // Default 5 — keeps a single-product import inside Vercel's 300s budget
+  // when image translation is on (Nano Banana 2 ≈ 40-90s per image).
+  // User can raise it manually but we surface a warning above 6.
+  const [maxImages, setMaxImages] = useState(5);
 
   // Watermark / Shopify policy safety
   const [watermarkEnabled, setWatermarkEnabled] = useState(true);
@@ -442,7 +445,14 @@ export default function ImportModal({
                     <input type="range" min={1} max={30} value={maxImages} onChange={(e) => setMaxImages(parseInt(e.target.value, 10))} className="flex-1" />
                     <span className="text-sm font-medium text-stone-900 dark:text-stone-100 w-12 text-right">{maxImages}</span>
                   </div>
-                  <p className="text-xs text-stone-400 -mt-1">Per Vercel runtime budget we cap at 30. Use lower number if generation timeout occurs.</p>
+                  {translateImagesEnabled && maxImages > 6 && (
+                    <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-2.5 text-xs text-red-800 dark:text-red-300 -mt-1">
+                      <strong>⚠️ Risk of timeout.</strong> With image translation ON, each image takes 40–90s. Vercel kills the function at 300s — at <strong>{maxImages} images</strong> you may run over budget and the product will NOT be pushed to Shopify. Keep this at <strong>≤ 5</strong> when translating images, or split into multiple imports.
+                    </div>
+                  )}
+                  {(!translateImagesEnabled || maxImages <= 6) && (
+                    <p className="text-xs text-stone-400 -mt-1">Capped at 30. Lower this if generation timeout occurs.</p>
+                  )}
 
                   <SectionTitle title="Translate text inside images" subtitle="Re-render any visible word — including phone-screen mockups — into the chosen language." />
                   <ToggleRow checked={translateImagesEnabled} onChange={setTranslateImagesEnabled}
@@ -624,6 +634,32 @@ export default function ImportModal({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ─── DONE PHASE — timeout fallback (no summary received) ──── */}
+        {phase === "done" && !summary && (
+          <div className="p-8 space-y-4">
+            <div className="text-center">
+              <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-3">
+                <span className="text-red-600 dark:text-red-400 text-2xl">⏱</span>
+              </div>
+              <p className="text-base font-semibold text-stone-900 dark:text-stone-100">Import ran out of time</p>
+              <p className="text-sm text-stone-500 mt-2 leading-relaxed max-w-md mx-auto">
+                Vercel killed the function before it finished. This usually happens when image translation is on and there are too many source images.
+                <br /><br />
+                <strong>Likely:</strong> no product was created in Shopify. Reduce <strong>maxImages</strong> to 5 or fewer, or disable image translation, and retry.
+              </p>
+              {results.length > 0 && (
+                <p className="text-xs text-stone-400 mt-3">{results.length} step(s) completed before timeout.</p>
+              )}
+            </div>
+            <div className="flex justify-center pt-2 gap-2">
+              <button onClick={() => { setPhase("config"); setResults([]); setMaxImages(Math.min(maxImages, 5)); }} className="px-5 py-2 border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 rounded-lg text-sm font-medium hover:bg-stone-50 dark:hover:bg-stone-800">
+                Retry with fewer images
+              </button>
+              <button onClick={onClose} className="px-5 py-2 bg-stone-900 dark:bg-white dark:text-stone-900 text-white rounded-lg text-sm font-medium">Close</button>
+            </div>
           </div>
         )}
 
