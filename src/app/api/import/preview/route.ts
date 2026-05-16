@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
                     mimeType: workingMime,
                     targetLang: opts.language,
                     modelSlug: opts.translateImagesModel,
+                    replaceBrandWith: storeBundle?.brandShortName,
                   });
                   workingBase64 = translated.imageBase64;
                   workingMime = translated.mimeType;

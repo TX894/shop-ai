@@ -198,6 +198,7 @@ export async function POST(req: NextRequest) {
                     mimeType: resultMime,
                     targetLang: opts.language,
                     modelSlug: opts.translateImagesModel,
+                    replaceBrandWith: storeBundle?.brandShortName,
                   });
                   resultBase64 = translated.imageBase64;
                   resultMime = translated.mimeType;

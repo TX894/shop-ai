@@ -478,6 +478,7 @@ async function processLegacyProduct(
             mimeType: workingMime,
             targetLang: opts.language,
             modelSlug: opts.translateImagesModel,
+            replaceBrandWith: storeBundle?.brandShortName,
           });
           workingBase64 = tr.imageBase64;
           workingMime = tr.mimeType;

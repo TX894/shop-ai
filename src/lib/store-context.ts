@@ -33,6 +33,7 @@ export async function loadActiveStoreBundle(): Promise<ActiveStoreBundle | undef
         targetAudience: store.target_audience,
         brandVoice: store.brand_voice,
         valueProps: store.value_props,
+        replaceBrandWith: store.brand_short_name ?? store.name,
       },
     };
   } catch {

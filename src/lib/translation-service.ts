@@ -20,6 +20,13 @@ export interface StoreContext {
   targetAudience?: string | null;
   brandVoice?: string | null;
   valueProps?: string | null;
+  /**
+   * The user's own brand short name (e.g. "SOULAGIS"). When set, any
+   * competitor brand / trademark word that appears in source titles or
+   * descriptions is rewritten to this name. Essential for dropshipping
+   * where source copy contains the supplier's own brand.
+   */
+  replaceBrandWith?: string | null;
 }
 
 function buildStoreContextBlock(ctx?: StoreContext): string {
@@ -31,8 +38,21 @@ function buildStoreContextBlock(ctx?: StoreContext): string {
   if (ctx.targetAudience) parts.push(`Target audience: ${ctx.targetAudience}`);
   if (ctx.brandVoice) parts.push(`Brand voice: ${ctx.brandVoice}`);
   if (ctx.valueProps) parts.push(`Differentiators: ${ctx.valueProps}`);
-  if (!parts.length) return "";
-  return `\n\nSTORE BRAND CONTEXT (use this in every output — match the voice, lean on these differentiators, write FOR this audience):\n${parts.map((p) => `- ${p}`).join("\n")}\n`;
+  if (!parts.length && !ctx.replaceBrandWith) return "";
+
+  const replacement = ctx.replaceBrandWith
+    ? `\n\nBRAND REPLACEMENT — VERY IMPORTANT:
+- The source copy is from a competitor / supplier and may contain THEIR brand name (e.g. "Treatmedy", "OrthoFix", "BunionPro", words ending in ™ or ®, stylised proprietary product names).
+- REPLACE every occurrence of a third-party brand with "${ctx.replaceBrandWith}". Use exactly that spelling and casing. Drop ™ / ® that came with the original.
+- A generic descriptor like "Bunion Corrector" is NOT a brand — keep it (translated). Only proprietary marks get replaced.
+- Never output the original competitor brand in the result.`
+    : "";
+
+  const contextBlock = parts.length
+    ? `\n\nSTORE BRAND CONTEXT (use this in every output — match the voice, lean on these differentiators, write FOR this audience):\n${parts.map((p) => `- ${p}`).join("\n")}`
+    : "";
+
+  return `${contextBlock}${replacement}\n`;
 }
 
 // ──────────────────────────────────────────────────────────────────────
