@@ -71,10 +71,10 @@ export default function ImportModal({
   const [enhanceDescEnabled, setEnhanceDescEnabled] = useState(true);
   const [seoEnabled, setSeoEnabled] = useState(true);
   const [aiImagesEnabled, setAiImagesEnabled] = useState(false);
-  // Default 5 — keeps a single-product import inside Vercel's 300s budget
-  // when image translation is on (Nano Banana 2 ≈ 40-90s per image).
-  // User can raise it manually but we surface a warning above 6.
-  const [maxImages, setMaxImages] = useState(5);
+  // Default 10 — images are now processed in parallel server-side, so
+  // 10 images take roughly the time of the slowest one (~60-90s) rather
+  // than the sum (~600-900s sequential). Warning surfaces above 12.
+  const [maxImages, setMaxImages] = useState(10);
 
   // Watermark / Shopify policy safety
   const [watermarkEnabled, setWatermarkEnabled] = useState(true);
@@ -272,6 +272,7 @@ export default function ImportModal({
                 "translating-images": "Translating text inside images...",
                 "watermarking": "Stamping brand watermark...",
                 "watermark-failed": "Watermark failed (image saved without)",
+                "image-done": "Image ready",
                 "translate-image-failed": "Image translation failed",
                 "enhancing-title": "Polishing title...",
                 "enhancing-description": "Writing description...",
@@ -447,13 +448,13 @@ export default function ImportModal({
                     <input type="range" min={1} max={30} value={maxImages} onChange={(e) => setMaxImages(parseInt(e.target.value, 10))} className="flex-1" />
                     <span className="text-sm font-medium text-stone-900 dark:text-stone-100 w-12 text-right">{maxImages}</span>
                   </div>
-                  {translateImagesEnabled && maxImages > 6 && (
-                    <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-2.5 text-xs text-red-800 dark:text-red-300 -mt-1">
-                      <strong>⚠️ Risk of timeout.</strong> With image translation ON, each image takes 40–90s. Vercel kills the function at 300s — at <strong>{maxImages} images</strong> you may run over budget and the product will NOT be pushed to Shopify. Keep this at <strong>≤ 5</strong> when translating images, or split into multiple imports.
+                  {translateImagesEnabled && maxImages > 12 && (
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-2.5 text-xs text-amber-800 dark:text-amber-300 -mt-1">
+                      <strong>⚠️ At higher counts the 300 s Vercel budget can still be hit</strong> if a single image fights the model. Images are processed in parallel server-side, so 10 is the comfortable sweet spot. Bump only if you need every supplier photo.
                     </div>
                   )}
-                  {(!translateImagesEnabled || maxImages <= 6) && (
-                    <p className="text-xs text-stone-400 -mt-1">Capped at 30. Lower this if generation timeout occurs.</p>
+                  {(!translateImagesEnabled || maxImages <= 12) && (
+                    <p className="text-xs text-stone-400 -mt-1">Processed in parallel server-side — 10 is the sweet spot with image translation on.</p>
                   )}
 
                   <SectionTitle title="Translate text inside images" subtitle="Re-render any visible word — including phone-screen mockups — into the chosen language." />

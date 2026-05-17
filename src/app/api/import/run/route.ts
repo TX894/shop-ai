@@ -146,32 +146,34 @@ export async function POST(req: NextRequest) {
             price = opts.fixedPrice;
           }
 
-          // 6. Process images (AI or original)
-          const libraryItemIds: string[] = [];
+          // 6. Process images IN PARALLEL.
+          // Image translation with Nano Banana 2 averages 40-90 s per image;
+          // running 5 images sequentially blows the 300 s Vercel budget.
+          // Promise.all here brings 5 images down to ~max(per-image-time)
+          // because kie.ai polls run concurrently.
           const cap = Math.max(1, Math.min(opts.maxImages ?? 20, 50));
           const imagesToProcess = product.images.slice(0, cap);
+          let completedImageCount = 0;
 
-          for (let j = 0; j < imagesToProcess.length; j++) {
-            const img = imagesToProcess[j];
-            // j=0 → hero, j=1 → detail, j=2 → lifestyle, j>=3 → detail (multiple angles/detail shots)
+          send({
+            type: "step",
+            step: "generating-images",
+            productHandle: handle,
+            productTitle: title,
+            progress: { current: 0, total: imagesToProcess.length },
+          });
+
+          const perImagePromises = imagesToProcess.map((img, j) => (async (): Promise<string | null> => {
+            // j=0 → hero, j=1 → detail, j=2 → lifestyle, j>=3 → detail (multiple angles)
             const role: ImageRole = j === 0 ? "hero" : j === 2 ? "lifestyle" : "detail";
-
-            send({
-              type: "step",
-              step: opts.aiImagesEnabled ? "generating-images" : "downloading-images",
-              productHandle: handle,
-              productTitle: title,
-              progress: { current: j + 1, total: imagesToProcess.length },
-            });
 
             try {
               // Download original image
-              const imgRes = await fetch(img.src, {
-                headers: { "User-Agent": "Mozilla/5.0" },
-              });
+              const imgRes = await fetch(img.src, { headers: { "User-Agent": "Mozilla/5.0" } });
               if (!imgRes.ok) {
                 console.error(`[import] Image download failed for ${handle} img ${j}: HTTP ${imgRes.status}`);
-                continue;
+                completedImageCount++;
+                return null;
               }
               const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
               const imgBase64 = imgBuffer.toString("base64");
@@ -182,16 +184,8 @@ export async function POST(req: NextRequest) {
               let promptUsed: string | undefined;
               let aiImageFailed = false;
 
-              // 6a. Translate text inside the image, if enabled.
-              // Done before AI restyle so the restyle preserves the new translated text.
+              // 6a. Translate text inside the image
               if (opts.translateImagesEnabled && opts.language) {
-                send({
-                  type: "step",
-                  step: "translating-images",
-                  productHandle: handle,
-                  productTitle: title,
-                  progress: { current: j + 1, total: imagesToProcess.length },
-                });
                 try {
                   const translated = await translateImage({
                     imageBase64: resultBase64,
@@ -205,27 +199,20 @@ export async function POST(req: NextRequest) {
                 } catch (trErr) {
                   const trMsg = trErr instanceof Error ? trErr.message : "Image translation failed";
                   console.error(`[import] Image translation ${j} failed for ${handle}: ${trMsg}`);
-                  send({
-                    type: "step",
-                    step: "translate-image-failed",
-                    productHandle: handle,
-                    error: trMsg,
-                  });
-                  // Fall through with original image
+                  send({ type: "step", step: "translate-image-failed", productHandle: handle, error: trMsg });
                 }
               }
 
+              // 6b. AI restyle
               if (opts.aiImagesEnabled && opts.aiImagePresetId) {
                 const preset = await getPreset(opts.aiImagePresetId);
                 if (preset) {
                   const prompt = composePrompt({
-                    preset,
-                    role,
+                    preset, role,
                     collection: opts.aiImageCollection,
                     customPrompt: opts.aiImageCustomPrompt,
                   });
                   promptUsed = prompt;
-
                   try {
                     const genResult = await generateImage({
                       modelSlug: opts.imageModel,
@@ -239,28 +226,13 @@ export async function POST(req: NextRequest) {
                     aiImageFailed = true;
                     const aiMsg = aiErr instanceof Error ? aiErr.message : "AI image failed";
                     console.error(`[import] AI image ${j} failed for ${handle}: ${aiMsg}`);
-                    send({
-                      type: "step",
-                      step: "ai-image-failed",
-                      productHandle: handle,
-                      error: aiMsg,
-                    });
-                    // Fall back to original image
+                    send({ type: "step", step: "ai-image-failed", productHandle: handle, error: aiMsg });
                   }
                 }
               }
 
-              // 6c. Brand watermark — applied LAST so it survives every prior step.
-              // This is the headline Shopify-policy protection: every image leaves
-              // the pipeline carrying the active store's brand mark.
+              // 6c. Brand watermark (LAST)
               if (opts.watermarkEnabled && storeBundle && (storeBundle.logoUrl || storeBundle.brandShortName)) {
-                send({
-                  type: "step",
-                  step: "watermarking",
-                  productHandle: handle,
-                  productTitle: title,
-                  progress: { current: j + 1, total: imagesToProcess.length },
-                });
                 try {
                   const wm = await applyWatermark({
                     imageBase64: resultBase64,
@@ -278,13 +250,11 @@ export async function POST(req: NextRequest) {
                     resultMime = wm.mimeType;
                   }
                 } catch (wmErr) {
-                  const msg = wmErr instanceof Error ? wmErr.message : "Watermark failed";
-                  console.error(`[import] Watermark ${j} failed for ${handle}: ${msg}`);
-                  send({ type: "step", step: "watermark-failed", productHandle: handle, error: msg });
+                  console.error(`[import] Watermark ${j} failed for ${handle}:`, wmErr instanceof Error ? wmErr.message : wmErr);
                 }
               }
 
-              // Save to library (AI result or original fallback)
+              // Save to library
               const itemId = generateId();
               const originalPath = await saveImage(imgBase64, imgMime, `${itemId}-original`);
               const resultPath = await saveImage(resultBase64, resultMime, `${itemId}-result`);
@@ -304,11 +274,26 @@ export async function POST(req: NextRequest) {
                 source_product_url: `https://${opts.sourceStore}/products/${handle}`,
               });
 
-              libraryItemIds.push(itemId);
+              completedImageCount++;
+              send({
+                type: "step",
+                step: "image-done",
+                productHandle: handle,
+                productTitle: title,
+                progress: { current: completedImageCount, total: imagesToProcess.length },
+              });
+
+              return itemId;
             } catch (imgErr) {
               console.error(`[import] Image ${j} failed entirely for ${handle}:`, imgErr instanceof Error ? imgErr.message : imgErr);
+              completedImageCount++;
+              return null;
             }
-          }
+          })());
+
+          // Wait for ALL images to finish (or fail). Order preserved by Promise.all.
+          const settled = await Promise.all(perImagePromises);
+          const libraryItemIds = settled.filter((id): id is string => !!id);
 
           // 7. Create Shopify product
           send({ type: "step", step: "creating-shopify", productHandle: handle, productTitle: title });
