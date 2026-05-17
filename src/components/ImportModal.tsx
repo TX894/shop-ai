@@ -463,7 +463,10 @@ export default function ImportModal({
                       <select value={translateImagesModel} onChange={(e) => setTranslateImagesModel(e.target.value)} className={inputCls}>
                         {imageModels.map((m) => <option key={m.slug} value={m.slug}>{m.displayName} ({m.creditsPerImage} credits)</option>)}
                       </select>
-                      <p className="text-[11px] text-stone-400 mt-1.5"><strong>Nano Banana 2</strong> is default — handles duplicates and screen mockups well.</p>
+                      <p className="text-[11px] text-stone-400 mt-1.5 leading-snug">
+                        <strong>Nano Banana 2</strong> is the default — handles overlays and screen mockups well.
+                        For stubborn images (brand text engraved on the product, curved 3D wordmarks, infographic badges), switch to <strong>Flux Kontext Max</strong> (20 credits) — slower and pricier but the strongest at editing text on real product surfaces.
+                      </p>
                     </div>
                   )}
 
