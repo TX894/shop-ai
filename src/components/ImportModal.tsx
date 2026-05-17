@@ -66,7 +66,9 @@ export default function ImportModal({
   const [translateEnabled, setTranslateEnabled] = useState(true);
   // ON by default — image text translation is a key Shopify-policy safety layer
   const [translateImagesEnabled, setTranslateImagesEnabled] = useState(true);
-  const [translateImagesModel, setTranslateImagesModel] = useState("nano-banana-2");
+  // nano-banana-edit is the most reliable for in-place text editing with a
+  // short prompt. Nano Banana 2 silently no-ops on dense infographics.
+  const [translateImagesModel, setTranslateImagesModel] = useState("nano-banana-edit");
   const [enhanceTitleEnabled, setEnhanceTitleEnabled] = useState(true);
   const [enhanceDescEnabled, setEnhanceDescEnabled] = useState(true);
   const [seoEnabled, setSeoEnabled] = useState(true);
@@ -484,7 +486,7 @@ export default function ImportModal({
                         {imageModels.map((m) => <option key={m.slug} value={m.slug}>{m.displayName} ({m.creditsPerImage} credits)</option>)}
                       </select>
                       <p className="text-[11px] text-stone-400 mt-1.5 leading-snug">
-                        <strong>Nano Banana 2</strong> is the default — handles overlays and screen mockups well.
+                        <strong>Nano Banana Edit</strong> is the default — fastest, cheapest (4 credits), most reliable for in-place text rewriting. Try Nano Banana 2 or Flux Kontext Max only if Edit misses on specific images.
                         For stubborn images (brand text engraved on the product, curved 3D wordmarks, infographic badges), switch to <strong>Flux Kontext Max</strong> (20 credits) — slower and pricier but the strongest at editing text on real product surfaces.
                       </p>
                     </div>
