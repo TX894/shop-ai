@@ -107,8 +107,9 @@ export default function ImportModal({
   const [fixedPrice, setFixedPrice] = useState("29.95");
   const [markupPercent, setMarkupPercent] = useState("0");
 
-  // Status
+  // Status + sales-channel publishing
   const [productStatus, setProductStatus] = useState<"DRAFT" | "ACTIVE">("DRAFT");
+  const [publishMode, setPublishMode] = useState<"online-store" | "all" | "none">("online-store");
 
   // Product selection within modal
   const [modalSelected, setModalSelected] = useState<Set<string>>(new Set(selectedHandles));
@@ -214,6 +215,7 @@ export default function ImportModal({
       watermarkPosition,
       watermarkOpacity: watermarkOpacity / 100,
       watermarkSize: watermarkSize / 100,
+      publishMode,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       collectionIds: [...selectedCollectionIds],
       pricingMode,
@@ -578,6 +580,28 @@ export default function ImportModal({
                       </button>
                     ))}
                   </div>
+
+                  <SectionTitle title="Sales channels" subtitle="Where the product becomes visible. Without publishing, the storefront returns 404 even when status is Active." />
+                  <div className="space-y-2">
+                    {([
+                      ["online-store", "Online Store", "Publish to the storefront — required for customers to see / buy."],
+                      ["all", "All sales channels", "Online Store + every other channel the app can access (POS, Google Shopping, Meta, etc.)."],
+                      ["none", "Admin only (do not publish)", "Product stays invisible everywhere. Use only if you want to publish manually later."],
+                    ] as const).map(([mode, label, hint]) => (
+                      <label key={mode} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${publishMode === mode ? "border-indigo-500 bg-indigo-50/40 dark:bg-indigo-900/20" : "border-stone-200 dark:border-stone-700 hover:border-stone-300"}`}>
+                        <input type="radio" name="publishMode" checked={publishMode === mode} onChange={() => setPublishMode(mode)} className="mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-stone-900 dark:text-stone-100">{label}</p>
+                          <p className="text-xs text-stone-500">{hint}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  {publishMode === "none" && (
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300">
+                      ⚠️ With this option you will get the same 404 issue you saw before — the product exists in admin but no channel sees it. Pick &quot;Online Store&quot; unless you have a reason.
+                    </div>
+                  )}
 
                   <SectionTitle title="Products to import" subtitle={`${modalSelected.size} of ${products.length} selected`} />
                   <div className="relative">

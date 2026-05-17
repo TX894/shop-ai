@@ -17,6 +17,8 @@ export interface ImportOptions {
   maxImages?: number;
   /** Generate SEO bundle (meta title, meta description, handle, tags, alt text) for each product. */
   seoEnabled?: boolean;
+  /** Which sales channels to publish to. Default "online-store". "none" leaves the product in admin only. */
+  publishMode?: "online-store" | "all" | "none";
   /** Stamp the active store's logo/brand onto every imported image. Critical for Shopify-policy safety when working from third-party photography. */
   watermarkEnabled?: boolean;
   /** Position of the watermark on each image. */

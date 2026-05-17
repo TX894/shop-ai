@@ -335,6 +335,7 @@ export async function POST(req: NextRequest) {
               seoDescription: seoBundle?.metaDescription,
               handle: seoBundle?.handle,
               imageAltText: seoBundle?.altText,
+              publishMode: opts.publishMode ?? "online-store",
             },
             opts.collectionIds
           );
@@ -404,6 +405,7 @@ async function createShopifyProduct(
     seoDescription?: string;
     handle?: string;
     imageAltText?: string;
+    publishMode?: "online-store" | "all" | "none";
   },
   collectionIds: string[]
 ): Promise<PushResult> {
@@ -421,6 +423,7 @@ async function createShopifyProduct(
     seoDescription: details.seoDescription,
     handle: details.handle,
     imageAltText: details.imageAltText,
+    publishMode: details.publishMode,
   });
 
   // Add to collections

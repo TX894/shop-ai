@@ -233,6 +233,28 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 3. Publish to Online Store channel — critical, else 404 on storefront
+      try {
+        const pubData = await graphql<{
+          publications: { edges: { node: { id: string; name: string } }[] };
+        }>(`query { publications(first: 50) { edges { node { id name } } } }`);
+        const onlineStore = pubData.publications.edges.find((e) => /online\s*store/i.test(e.node.name));
+        if (onlineStore) {
+          await graphql(
+            `mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
+              publishablePublish(id: $id, input: $input) {
+                userErrors { field message }
+              }
+            }`,
+            { id: product.id, input: [{ publicationId: onlineStore.node.id }] }
+          );
+        } else {
+          console.warn(`[gallery/push] Online Store publication not found for ${draft.handle}`);
+        }
+      } catch (pubErr) {
+        console.error(`[gallery/push] Publish failed for ${draft.handle}:`, pubErr);
+      }
+
       const domain = await getStoreDomain();
       const numericId = product.id.split("/").pop();
       const adminUrl = `https://${domain}/admin/products/${numericId}`;
