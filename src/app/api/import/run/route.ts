@@ -16,6 +16,33 @@ import { saveImage, generateId } from "@/lib/storage";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/** kie.ai is rate-limited to 20 req/10s. 3 in-flight image translations
+ *  + their polling stays comfortably under the limit, while still cutting
+ *  total wall time to ~2× the slowest image instead of N× sequential. */
+const IMAGE_PIPELINE_CONCURRENCY = 3;
+
+/**
+ * Run an async mapper over `items` with a bounded number of concurrent
+ * workers. Preserves input order in the returned array.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 export async function POST(req: NextRequest) {
   let opts: ImportOptions;
   try {
@@ -163,7 +190,11 @@ export async function POST(req: NextRequest) {
             progress: { current: 0, total: imagesToProcess.length },
           });
 
-          const perImagePromises = imagesToProcess.map((img, j) => (async (): Promise<string | null> => {
+          // Counters for the per-product translation summary
+          let translatedCount = 0;
+          let untranslatedCount = 0;
+
+          const settled = await mapWithConcurrency(imagesToProcess, IMAGE_PIPELINE_CONCURRENCY, async (img, j): Promise<string | null> => {
             // j=0 → hero, j=1 → detail, j=2 → lifestyle, j>=3 → detail (multiple angles)
             const role: ImageRole = j === 0 ? "hero" : j === 2 ? "lifestyle" : "detail";
 
@@ -196,7 +227,15 @@ export async function POST(req: NextRequest) {
                   });
                   resultBase64 = translated.imageBase64;
                   resultMime = translated.mimeType;
+                  if (translated.changed) {
+                    translatedCount++;
+                  } else {
+                    untranslatedCount++;
+                    console.warn(`[import] Image translation ${j} returned unchanged image for ${handle} (model returned source as-is)`);
+                    send({ type: "step", step: "translate-image-unchanged", productHandle: handle, error: `Image ${j + 1} came back unchanged from the model` });
+                  }
                 } catch (trErr) {
+                  untranslatedCount++;
                   const trMsg = trErr instanceof Error ? trErr.message : "Image translation failed";
                   console.error(`[import] Image translation ${j} failed for ${handle}: ${trMsg}`);
                   send({ type: "step", step: "translate-image-failed", productHandle: handle, error: trMsg });
@@ -289,11 +328,21 @@ export async function POST(req: NextRequest) {
               completedImageCount++;
               return null;
             }
-          })());
+          });
 
-          // Wait for ALL images to finish (or fail). Order preserved by Promise.all.
-          const settled = await Promise.all(perImagePromises);
           const libraryItemIds = settled.filter((id): id is string => !!id);
+
+          // Per-product translation summary — surfaced so the user immediately
+          // sees how many images actually came back translated vs original.
+          if (opts.translateImagesEnabled && imagesToProcess.length > 0) {
+            send({
+              type: "step",
+              step: "translation-summary",
+              productHandle: handle,
+              progress: { current: translatedCount, total: imagesToProcess.length },
+              error: untranslatedCount > 0 ? `${untranslatedCount} image(s) came back without translation` : undefined,
+            });
+          }
 
           // 7. Create Shopify product
           send({ type: "step", step: "creating-shopify", productHandle: handle, productTitle: title });

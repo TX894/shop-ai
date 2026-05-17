@@ -12,7 +12,10 @@ import { fetchWithTimeout, fetchWithRetry } from "../fetch-utils";
 const KIE_API_BASE = "https://api.kie.ai";
 const KIE_UPLOAD_BASE = "https://kieai.redpandaai.co";
 const POLL_INTERVAL_MS = 4_000;
-const POLL_TIMEOUT_MS = 90_000; // Reduced from 120s to fit in 50s budget with margin
+// Nano Banana 2 with heavy image-text translation can legitimately take >90s.
+// Raised so genuine slow tasks complete rather than throwing and silently
+// falling back to the untranslated original.
+const POLL_TIMEOUT_MS = 150_000;
 
 export async function getApiKey(): Promise<string> {
   const key = await getConfigValue("KIE_AI_API_KEY");

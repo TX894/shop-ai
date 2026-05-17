@@ -120,6 +120,8 @@ export default function ImportModal({
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [results, setResults] = useState<ImportResult[]>([]);
   const [summary, setSummary] = useState<{ total: number; success: number; failed: number } | null>(null);
+  // Aggregate counters surfaced in the done screen
+  const [translationStats, setTranslationStats] = useState<{ translated: number; unchanged: number; productCount: number } | null>(null);
 
   // ── Data loading ──────────────────────────────────────────────────
   useEffect(() => {
@@ -150,6 +152,7 @@ export default function ImportModal({
       setPhase("config");
       setResults([]);
       setSummary(null);
+      setTranslationStats(null);
       setTab("content");
     }
   }, [open, selectedHandles]);
@@ -273,6 +276,8 @@ export default function ImportModal({
                 "watermarking": "Stamping brand watermark...",
                 "watermark-failed": "Watermark failed (image saved without)",
                 "image-done": "Image ready",
+                "translate-image-unchanged": "An image came back unchanged from the model — falling back to original",
+                "translation-summary": "Image translation summary",
                 "translate-image-failed": "Image translation failed",
                 "enhancing-title": "Polishing title...",
                 "enhancing-description": "Writing description...",
@@ -283,6 +288,18 @@ export default function ImportModal({
                 "creating-shopify": "Pushing to Shopify...",
               };
               setCurrentStep(labels[event.step ?? ""] ?? event.step ?? "");
+
+              // Accumulate image-translation stats across all products
+              if (event.step === "translation-summary" && event.progress) {
+                const translated = event.progress.current;
+                const total = event.progress.total;
+                const unchanged = Math.max(0, total - translated);
+                setTranslationStats((prev) => ({
+                  translated: (prev?.translated ?? 0) + translated,
+                  unchanged: (prev?.unchanged ?? 0) + unchanged,
+                  productCount: (prev?.productCount ?? 0) + 1,
+                }));
+              }
             } else if (event.type === "product-done") {
               setResults((prev) => [...prev, { handle: event.productHandle ?? "", title: event.productTitle ?? "", adminUrl: event.result?.adminUrl, success: true }]);
             } else if (event.type === "product-error") {
@@ -699,6 +716,19 @@ export default function ImportModal({
                 {summary.failed === 0 ? <Check className="text-green-600 dark:text-green-400" size={28} strokeWidth={3} /> : <span className="text-amber-600 text-2xl">!</span>}
               </div>
               <p className="text-lg font-semibold text-stone-900 dark:text-stone-100">{summary.success} product{summary.success !== 1 ? "s" : ""} imported{summary.failed > 0 && `, ${summary.failed} failed`}</p>
+              {translationStats && (translationStats.translated + translationStats.unchanged) > 0 && (
+                <div className="mt-3 inline-flex flex-col items-start gap-1 text-left text-xs bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2">
+                  <div className="font-medium text-stone-700 dark:text-stone-300">Image translation</div>
+                  <div className="text-stone-600 dark:text-stone-400">
+                    ✓ <strong>{translationStats.translated}</strong> images translated
+                  </div>
+                  {translationStats.unchanged > 0 && (
+                    <div className="text-amber-700 dark:text-amber-400">
+                      ⚠ <strong>{translationStats.unchanged}</strong> image{translationStats.unchanged !== 1 ? "s" : ""} came back unchanged (the model couldn&apos;t edit them — open the product in Shopify and replace manually, or retry the import)
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="max-h-72 overflow-auto border border-stone-200 dark:border-stone-800 rounded-xl divide-y divide-stone-100 dark:divide-stone-800">
               {results.map((r, i) => (
