@@ -15,6 +15,7 @@ import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
 import { applyWatermark } from "@/lib/watermark";
+import { deriveBrandName } from "@/lib/brand-utils";
 import { fetchWithRetry } from "@/lib/fetch-utils";
 import { saveImage } from "@/lib/storage";
 import {
@@ -479,6 +480,7 @@ async function processLegacyProduct(
             targetLang: opts.language,
             modelSlug: opts.translateImagesModel,
             replaceBrandWith: storeBundle?.brandShortName,
+            replaceBrandFrom: deriveBrandName(sourceStore),
           });
           workingBase64 = tr.imageBase64;
           workingMime = tr.mimeType;

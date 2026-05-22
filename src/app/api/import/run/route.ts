@@ -8,6 +8,7 @@ import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
 import { applyWatermark } from "@/lib/watermark";
+import { deriveBrandName } from "@/lib/brand-utils";
 import { graphql, type PushResult } from "@/lib/shopify-admin";
 import { getStoreDomain } from "@/lib/shopify-auth";
 import { insertItem } from "@/lib/db";
@@ -72,6 +73,11 @@ export async function POST(req: NextRequest) {
       // Load store brand bundle once for the whole batch
       const storeBundle: ActiveStoreBundle | undefined = await loadActiveStoreBundle();
       const storeCtx: StoreContext | undefined = storeBundle?.ctx;
+      // Competitor brand derived from the source store domain — e.g.
+      // "treatmedy.com" → "Treatmedy". Lets the image edit say the concrete
+      // "change Treatmedy to SOULAGIS" instead of the safety-tripping
+      // "replace the competitor trademark".
+      const competitorBrand = deriveBrandName(opts.sourceStore);
 
       for (let i = 0; i < total; i++) {
         const handle = opts.selectedHandles[i];
@@ -224,6 +230,7 @@ export async function POST(req: NextRequest) {
                     targetLang: opts.language,
                     modelSlug: opts.translateImagesModel,
                     replaceBrandWith: storeBundle?.brandShortName,
+                    replaceBrandFrom: competitorBrand,
                   });
                   resultBase64 = translated.imageBase64;
                   resultMime = translated.mimeType;

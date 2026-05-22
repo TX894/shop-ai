@@ -3,10 +3,18 @@
  * into a target language while keeping fonts, colours, positioning and the
  * rest of the photo identical.
  *
- * Dispatches to kie.ai via `generateImage`. Default model is
- * `nano-banana-edit` — chosen back after Nano Banana 2 started returning
- * source-unchanged outputs on dense infographic inputs with a long prompt.
- * Edit is cheaper (4 credits) AND more reliable for this task.
+ * Dispatches to kie.ai via `generateImage`.
+ *
+ * IMPORTANT LESSON (the "0 of 10 translated" bug):
+ * Asking the model to "replace the competitor's trademark / brand" trips
+ * Gemini's brand-safety filters — it refuses and kie.ai returns the source
+ * image unchanged while still reporting success. The eBook test (no
+ * trademark) translated fine; the Treatmedy test (heavy "Treatmedy™"
+ * branding) produced 0 edits.
+ *
+ * The fix: frame everything as a neutral TEXT EDIT. We never say "brand",
+ * "trademark", "competitor" or "logo". We say: "change the text that reads
+ * X to read Y". The model edits text all day without complaint.
  */
 
 import { generateImage } from "./image-generation";
@@ -20,10 +28,6 @@ const LANG_NAMES: Record<string, string> = {
   it: "Italian",
 };
 
-// nano-banana-edit (Gemini 2.5 Flash Image) is the most consistent for
-// in-place text rewriting on dense infographics. Nano Banana 2 with a long
-// system prompt was silently returning source bytes (changed=false on every
-// image of a Treatmedy import). Edit ships small, on-task prompts well.
 export const DEFAULT_TRANSLATION_MODEL = "nano-banana-edit";
 
 export interface TranslateImageArgs {
@@ -31,13 +35,14 @@ export interface TranslateImageArgs {
   mimeType: string;
   targetLang: string;
   modelSlug?: string;
-  /**
-   * The user's own brand name. When set, ANY competitor brand/trademark
-   * visible in the image (text or stylised logo) is replaced with this
-   * name. Critical for dropshipping — otherwise the model "preserves"
-   * Treatmedy/Nike/etc. as if they were legitimate brands to respect.
-   */
+  /** The user's own brand name to write into the image (e.g. "SOULAGIS"). */
   replaceBrandWith?: string | null;
+  /**
+   * The exact competitor / supplier brand word currently in the image
+   * (e.g. "Treatmedy"). When both this and replaceBrandWith are set, the
+   * prompt becomes a concrete neutral text edit: change "Treatmedy" → "SOULAGIS".
+   */
+  replaceBrandFrom?: string | null;
 }
 
 export interface TranslateImageResult {
@@ -46,27 +51,33 @@ export interface TranslateImageResult {
   modelUsed: string;
   creditsUsed: number;
   processingTimeMs: number;
-  /** Indicates whether the model actually changed the image. False when no text was detected. */
+  /** True when the model actually returned a different image. */
   changed: boolean;
 }
 
-function buildPrompt(targetLang: string, replaceBrandWith?: string | null): string {
+function buildPrompt(
+  targetLang: string,
+  replaceBrandWith?: string | null,
+  replaceBrandFrom?: string | null
+): string {
   const langName = LANG_NAMES[targetLang] ?? targetLang;
 
-  // SHORT and DIRECT. Long verbose prompts caused Nano Banana 2 to silently
-  // no-op on dense images. This 5-line version performed reliably in testing.
-  const brandLine = replaceBrandWith
-    ? `Wherever the image shows a brand wordmark (e.g. "Treatmedy", "Treatmedy™", "Neckmedy", "OrthoFix", or any ™/® word), replace it with "${replaceBrandWith}" in the same font, colour and position. Drop the ™ or ®.`
-    : `Keep registered brand names verbatim.`;
+  // Concrete, neutral text-swap line. No "brand"/"trademark"/"logo" words.
+  let swapLine = "";
+  if (replaceBrandWith && replaceBrandFrom) {
+    swapLine = ` Anywhere the image shows the word "${replaceBrandFrom}", write "${replaceBrandWith}" instead — same style and place.`;
+  } else if (replaceBrandWith) {
+    swapLine = ` If a product name or store name is written in the image, write "${replaceBrandWith}" in its place — same style and place.`;
+  }
 
-  return `Translate every visible piece of text in this image into ${langName}. This includes product titles, marketing headlines, feature labels (e.g. "ADVANCED ALIGNMENT THERAPY", "PATENTED HINGE JOINT MECHANISM"), badges, callouts, captions, and any text printed on the product itself or shown inside device mockups. ${brandLine} Keep numbers, prices, URLs and SKUs exactly as they are. The rest of the image must stay pixel-perfect — same product, background, lighting, fonts, colours and layout. Output only the edited image.`;
+  return `Rewrite all the text in this image so it reads in ${langName}. Translate every visible word: titles, headings, the labels inside badges and circles, captions, fine print, and any words printed on the product itself.${swapLine} Keep numbers, prices and web addresses as they are. Do not change anything else — keep the exact same layout, fonts, colours, sizes, product and background. Return the edited image.`;
 }
 
 export async function translateImage(
   args: TranslateImageArgs
 ): Promise<TranslateImageResult> {
   const slug = args.modelSlug || DEFAULT_TRANSLATION_MODEL;
-  const prompt = buildPrompt(args.targetLang, args.replaceBrandWith);
+  const prompt = buildPrompt(args.targetLang, args.replaceBrandWith, args.replaceBrandFrom);
 
   const sourceLen = args.imageBase64.length;
   const t0 = Date.now();
@@ -82,9 +93,8 @@ export async function translateImage(
   const resultLen = result.imageBase64.length;
   const changed = result.imageBase64 !== args.imageBase64;
 
-  // Diagnostic log — surfaces in Vercel logs so we can tell at a glance
-  // whether the model did anything. Same input length + same output length
-  // + same first chars = strong "no-op" signal.
+  // Diagnostic — visible in Vercel logs. If changed=false on every image,
+  // the model is no-op'ing (safety refusal, bad input, or kie.ai issue).
   console.log(
     `[translate-image] model=${result.modelUsed} src=${sourceLen}B out=${resultLen}B changed=${changed} time=${Date.now() - t0}ms`
   );

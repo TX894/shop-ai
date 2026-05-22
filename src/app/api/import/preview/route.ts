@@ -8,6 +8,7 @@ import { getPreset, composePrompt } from "@/lib/prompt-engine";
 import { generateImage } from "@/lib/image-generation";
 import { translateImage } from "@/lib/image-translation";
 import { applyWatermark } from "@/lib/watermark";
+import { deriveBrandName } from "@/lib/brand-utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       const total = opts.selectedHandles.length;
       const storeBundle = await loadActiveStoreBundle();
       const storeCtx = storeBundle?.ctx;
+      const competitorBrand = deriveBrandName(opts.sourceStore);
 
       for (let i = 0; i < total; i++) {
         const handle = opts.selectedHandles[i];
@@ -125,6 +127,7 @@ export async function POST(req: NextRequest) {
                     targetLang: opts.language,
                     modelSlug: opts.translateImagesModel,
                     replaceBrandWith: storeBundle?.brandShortName,
+                    replaceBrandFrom: competitorBrand,
                   });
                   workingBase64 = translated.imageBase64;
                   workingMime = translated.mimeType;
