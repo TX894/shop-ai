@@ -250,90 +250,117 @@ export default function ImportModal({
     };
   }
 
+  const STEP_LABELS: Record<string, string> = {
+    fetching: "Fetching product...",
+    translating: "Translating text...",
+    "translating-images": "Translating text inside images...",
+    watermarking: "Stamping brand watermark...",
+    "watermark-failed": "Watermark failed (image saved without)",
+    "image-done": "Image ready",
+    "translate-image-unchanged": "An image came back unchanged from the model — falling back to original",
+    "translation-summary": "Image translation summary",
+    "translate-image-failed": "Image translation failed",
+    "enhancing-title": "Polishing title...",
+    "enhancing-description": "Writing description...",
+    "seo-bundle": "Generating SEO meta...",
+    "generating-images": "Generating AI images...",
+    "downloading-images": "Downloading images...",
+    "ai-image-failed": "AI image fell back to original",
+    "creating-shopify": "Pushing to Shopify...",
+  };
+
+  /**
+   * Import runs ONE product per /api/import/run call. Each call gets its
+   * own fresh 300s Vercel budget — so 5 products no longer share a single
+   * 300s window and time out. A product that times out is recorded as
+   * failed and the loop continues to the next one.
+   */
   async function handleImport() {
     setPhase("importing");
     setResults([]);
     setSummary(null);
-    setCurrentStep("Starting...");
-    setProgress({ current: 0, total: count });
+    setTranslationStats(null);
 
-    try {
-      const res = await fetch("/api/import/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildImportOptions()),
-      });
+    const handles = [...modalSelected];
+    const total = handles.length;
+    const baseOpts = buildImportOptions();
+    let successCount = 0;
+    let failCount = 0;
 
-      if (!res.ok || !res.body) {
-        setPhase("done");
-        setSummary({ total: count, success: 0, failed: count });
-        return;
-      }
+    for (let i = 0; i < total; i++) {
+      const handle = handles[i];
+      setProgress({ current: i + 1, total });
+      setCurrentStep(`Product ${i + 1} of ${total}: ${handle}`);
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      let gotResultForThisProduct = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() ?? "";
+      try {
+        const res = await fetch("/api/import/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseOpts, selectedHandles: [handle] }),
+        });
 
-        for (const block of blocks) {
-          const line = block.trim();
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const event = JSON.parse(line.slice(6)) as ImportProductEvent;
-            if (event.type === "product-start") {
-              setProgress(event.progress ?? { current: 0, total: count });
-              setCurrentStep(`Product ${event.progress?.current}/${event.progress?.total}: ${event.productHandle}`);
-            } else if (event.type === "step") {
-              const labels: Record<string, string> = {
-                fetching: "Fetching product...",
-                translating: "Translating text...",
-                "translating-images": "Translating text inside images...",
-                "watermarking": "Stamping brand watermark...",
-                "watermark-failed": "Watermark failed (image saved without)",
-                "image-done": "Image ready",
-                "translate-image-unchanged": "An image came back unchanged from the model — falling back to original",
-                "translation-summary": "Image translation summary",
-                "translate-image-failed": "Image translation failed",
-                "enhancing-title": "Polishing title...",
-                "enhancing-description": "Writing description...",
-                "seo-bundle": "Generating SEO meta...",
-                "generating-images": "Generating AI images...",
-                "downloading-images": "Downloading images...",
-                "ai-image-failed": "AI image fell back to original",
-                "creating-shopify": "Pushing to Shopify...",
-              };
-              setCurrentStep(labels[event.step ?? ""] ?? event.step ?? "");
+        if (!res.ok || !res.body) {
+          throw new Error(`HTTP ${res.status}`);
+        }
 
-              // Accumulate image-translation stats across all products
-              if (event.step === "translation-summary" && event.progress) {
-                const translated = event.progress.current;
-                const total = event.progress.total;
-                const unchanged = Math.max(0, total - translated);
-                setTranslationStats((prev) => ({
-                  translated: (prev?.translated ?? 0) + translated,
-                  unchanged: (prev?.unchanged ?? 0) + unchanged,
-                  productCount: (prev?.productCount ?? 0) + 1,
-                }));
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+
+          for (const block of blocks) {
+            const line = block.trim();
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6)) as ImportProductEvent;
+              if (event.type === "step") {
+                setCurrentStep(`${i + 1}/${total}: ${STEP_LABELS[event.step ?? ""] ?? event.step ?? ""}`);
+                if (event.step === "translation-summary" && event.progress) {
+                  const translated = event.progress.current;
+                  const tot = event.progress.total;
+                  const unchanged = Math.max(0, tot - translated);
+                  setTranslationStats((prev) => ({
+                    translated: (prev?.translated ?? 0) + translated,
+                    unchanged: (prev?.unchanged ?? 0) + unchanged,
+                    productCount: (prev?.productCount ?? 0) + 1,
+                  }));
+                }
+              } else if (event.type === "product-done") {
+                gotResultForThisProduct = true;
+                successCount++;
+                setResults((prev) => [...prev, { handle: event.productHandle ?? handle, title: event.productTitle ?? handle, adminUrl: event.result?.adminUrl, success: true }]);
+              } else if (event.type === "product-error") {
+                gotResultForThisProduct = true;
+                failCount++;
+                setResults((prev) => [...prev, { handle: event.productHandle ?? handle, title: event.productHandle ?? handle, success: false, error: event.error }]);
               }
-            } else if (event.type === "product-done") {
-              setResults((prev) => [...prev, { handle: event.productHandle ?? "", title: event.productTitle ?? "", adminUrl: event.result?.adminUrl, success: true }]);
-            } else if (event.type === "product-error") {
-              setResults((prev) => [...prev, { handle: event.productHandle ?? "", title: event.productHandle ?? "", success: false, error: event.error }]);
-            } else if (event.type === "complete") {
-              setSummary(event.summary ?? null);
-            }
-          } catch { /* ignore */ }
+            } catch { /* ignore malformed line */ }
+          }
+        }
+
+        // Stream ended with no product-done / product-error → this product
+        // timed out. Record it and move on — don't abort the whole batch.
+        if (!gotResultForThisProduct) {
+          failCount++;
+          setResults((prev) => [...prev, { handle, title: handle, success: false, error: "Timed out — try fewer images for this product" }]);
+        }
+      } catch (err) {
+        if (!gotResultForThisProduct) {
+          failCount++;
+          setResults((prev) => [...prev, { handle, title: handle, success: false, error: err instanceof Error ? err.message : "Failed" }]);
         }
       }
-    } catch {
-      setSummary({ total: count, success: results.filter((r) => r.success).length, failed: count - results.filter((r) => r.success).length });
     }
+
+    setSummary({ total, success: successCount, failed: failCount });
     setPhase("done");
   }
 
