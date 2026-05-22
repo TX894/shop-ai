@@ -87,6 +87,10 @@ export default function ImportModal({
   // Active store snapshot for the watermark preview
   const [activeStore, setActiveStore] = useState<{ id: string; name: string; logo_url: string | null; brand_short_name: string | null } | null>(null);
 
+  // kie.ai credit balance — checked on open so the user is warned before
+  // starting an import that would silently fail on 0 credits.
+  const [kieCredits, setKieCredits] = useState<number | null | "loading">("loading");
+
   // AI image settings
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState("");
@@ -146,6 +150,10 @@ export default function ImportModal({
       const a = (d.stores ?? []).find((s: { is_active: boolean }) => s.is_active);
       if (a) setActiveStore({ id: a.id, name: a.name, logo_url: a.logo_url, brand_short_name: a.brand_short_name });
     }).catch(() => {});
+    setKieCredits("loading");
+    fetch("/api/kie-credits").then((r) => r.json()).then((d: { ok: boolean; credits: number | null }) => {
+      setKieCredits(d.ok ? d.credits : null);
+    }).catch(() => setKieCredits(null));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -199,6 +207,17 @@ export default function ImportModal({
   const enhanceCost = (enhanceTitleEnabled ? count * 0.002 : 0) + (enhanceDescEnabled ? count * 0.005 : 0);
   const seoCost = seoEnabled ? count * 0.003 : 0;
   const totalCost = aiImageCost + translateImagesCost + translateCost + enhanceCost + seoCost;
+
+  // kie.ai credits needed = image-translation + AI-restyle credit usage.
+  // (Text translation / enhance / SEO use Anthropic, not kie.ai credits.)
+  const creditsNeeded =
+    (translateImagesEnabled ? count * maxImages * translateImagesCredits : 0) +
+    (aiImagesEnabled ? count * maxImages * modelCredits : 0);
+  const usesKie = translateImagesEnabled || aiImagesEnabled;
+  // null = couldn't check, "loading" = in flight, number = real balance
+  const creditsKnown = typeof kieCredits === "number";
+  const creditsShort = creditsKnown && usesKie && (kieCredits as number) < creditsNeeded;
+  const creditsZero = creditsKnown && usesKie && (kieCredits as number) <= 0;
 
   function buildImportOptions(): Record<string, unknown> {
     return {
@@ -725,8 +744,8 @@ export default function ImportModal({
                     ✓ <strong>{translationStats.translated}</strong> images translated
                   </div>
                   {translationStats.unchanged > 0 && (
-                    <div className="text-amber-700 dark:text-amber-400">
-                      ⚠ <strong>{translationStats.unchanged}</strong> image{translationStats.unchanged !== 1 ? "s" : ""} came back unchanged (the model couldn&apos;t edit them — open the product in Shopify and replace manually, or retry the import)
+                    <div className="text-amber-700 dark:text-amber-400 max-w-md">
+                      ⚠ <strong>{translationStats.unchanged}</strong> image{translationStats.unchanged !== 1 ? "s" : ""} not translated. Most common cause: <strong>kie.ai out of credits</strong> — check <a href="/api/diagnostics" target="_blank" rel="noopener" className="underline">/api/diagnostics</a>. Otherwise the model couldn&apos;t edit a dense image; retry or replace it manually in Shopify.
                     </div>
                   )}
                 </div>
@@ -748,11 +767,34 @@ export default function ImportModal({
           </div>
         )}
 
+        {/* kie.ai credit warning (config phase only) */}
+        {phase === "config" && usesKie && (creditsZero || creditsShort || kieCredits === null) && (
+          <div className={`border-t px-4 py-3 text-xs flex items-start gap-2 ${
+            creditsZero || kieCredits === null
+              ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300"
+              : "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300"
+          }`}>
+            <span className="text-base leading-none">{creditsZero || kieCredits === null ? "⛔" : "⚠️"}</span>
+            <div>
+              {kieCredits === null ? (
+                <>Couldn&apos;t check your kie.ai balance. Image translation / AI restyle may fail. Verify the key in <a href="/settings" className="underline font-medium">Settings → API Keys</a>.</>
+              ) : creditsZero ? (
+                <><strong>kie.ai has 0 credits.</strong> Image translation and AI restyle WILL fail silently — every image comes back untranslated. Top up at <a href="https://kie.ai" target="_blank" rel="noopener" className="underline font-medium">kie.ai</a> before importing, or untick the image options.</>
+              ) : (
+                <><strong>Low kie.ai balance:</strong> you have <strong>{kieCredits}</strong> credits but this import needs about <strong>{creditsNeeded}</strong>. Some images won&apos;t translate. Top up at <a href="https://kie.ai" target="_blank" rel="noopener" className="underline font-medium">kie.ai</a>.</>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* FOOTER (config phase only) */}
         {phase === "config" && (
           <div className="border-t border-stone-200 dark:border-stone-800 p-4 flex items-center justify-between bg-white dark:bg-stone-900">
             <button onClick={onClose} className="text-sm text-stone-500 hover:text-stone-900 dark:text-stone-400 px-3 py-2">Cancel</button>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3">
+              {usesKie && creditsKnown && !creditsShort && (
+                <span className="text-xs text-stone-400">kie.ai: {kieCredits} credits</span>
+              )}
               <button onClick={() => {
                 sessionStorage.setItem("previewOptions", JSON.stringify(buildImportOptions()));
                 window.location.href = `/scan/preview?store=${sourceStore}`;
