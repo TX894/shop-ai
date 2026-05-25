@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
-import { Sun, Moon, Library, Scan, Settings, Store as StoreIcon, ChevronDown, Sparkles } from "lucide-react";
+import { Sun, Moon, Library, Scan, Settings, Store as StoreIcon, ChevronDown, Sparkles, BookmarkPlus } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/scan", label: "Scan", icon: Scan },
+  { href: "/extension", label: "Bookmarklet", icon: BookmarkPlus },
   { href: "/library", label: "Library", icon: Library },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
