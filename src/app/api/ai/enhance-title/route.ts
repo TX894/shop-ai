@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enhanceTitle } from "@/lib/translation-service";
+import { loadActiveStoreContext } from "@/lib/store-context";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "title required" }, { status: 400 });
   }
   try {
-    const enhanced = await enhanceTitle(body.title, body.language ?? "en", body.productType);
+    const ctx = await loadActiveStoreContext();
+    const enhanced = await enhanceTitle(body.title, body.language ?? "en", body.productType, ctx);
     return NextResponse.json({ enhanced });
   } catch (err) {
     return NextResponse.json(

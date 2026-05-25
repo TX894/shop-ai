@@ -19,6 +19,21 @@ export interface ProductDetails {
   productType?: string;
   tags?: string[];
   status?: "DRAFT" | "ACTIVE";
+  /** SEO meta title (50-60 chars). Set via productCreate `seo` input. */
+  seoTitle?: string;
+  /** SEO meta description (140-160 chars). Set via productCreate `seo` input. */
+  seoDescription?: string;
+  /** URL handle slug. Shopify will dedupe by appending -1, -2 if taken. */
+  handle?: string;
+  /** Alt text used for ALL uploaded images (override individual notes). */
+  imageAltText?: string;
+  /**
+   * Sales-channel publishing.
+   *  - "online-store" (default): publish only to the Online Store channel
+   *  - "all": publish to every channel the app has access to (POS, Google, etc.)
+   *  - "none": skip publishing (product remains in admin-only)
+   */
+  publishMode?: "online-store" | "all" | "none";
 }
 
 export interface PushResult {
@@ -92,6 +107,78 @@ async function fetchWithRetry(
   throw new Error("Shopify rate limit: too many retries");
 }
 
+// ---------- Sales-channel publication ----------
+
+interface PublicationNode {
+  id: string;
+  name: string;
+}
+
+/**
+ * Query all publications (sales channels) the connected app can publish to.
+ * Common entries: "Online Store", "Point of Sale", "Google", "Facebook & Instagram".
+ */
+async function listPublications(): Promise<PublicationNode[]> {
+  const data = await graphql<{
+    publications: { edges: { node: PublicationNode }[] };
+  }>(`query { publications(first: 50) { edges { node { id name } } } }`);
+  return data.publications.edges.map((e) => e.node);
+}
+
+/**
+ * Filter publications according to the chosen mode.
+ *  - "online-store": only the Online Store channel (matching name "Online Store")
+ *  - "all": every publication returned
+ */
+function selectPublicationsForMode(
+  publications: PublicationNode[],
+  mode: "online-store" | "all"
+): PublicationNode[] {
+  if (mode === "all") return publications;
+  return publications.filter((p) => /online\s*store/i.test(p.name));
+}
+
+/**
+ * Make a product visible on the chosen sales channels.
+ * MUST be called after productCreate — otherwise the product is created
+ * in admin only and the storefront returns 404 even when status = ACTIVE.
+ *
+ * Requires the `write_publications` scope on the custom app.
+ */
+async function publishProductToChannels(
+  productGid: string,
+  publicationIds: string[]
+): Promise<{ publishedCount: number; errors: string[] }> {
+  if (publicationIds.length === 0) {
+    return { publishedCount: 0, errors: ["No publications available for this app"] };
+  }
+
+  const data = await graphql<{
+    publishablePublish: {
+      publishable: { availablePublicationsCount: { count: number } } | null;
+      userErrors: { field: string[]; message: string }[];
+    };
+  }>(
+    `mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
+      publishablePublish(id: $id, input: $input) {
+        publishable {
+          ... on Product {
+            availablePublicationsCount { count }
+          }
+        }
+        userErrors { field message }
+      }
+    }`,
+    {
+      id: productGid,
+      input: publicationIds.map((pid) => ({ publicationId: pid })),
+    }
+  );
+
+  const errors = data.publishablePublish.userErrors.map((e) => e.message);
+  return { publishedCount: publicationIds.length - errors.length, errors };
+}
+
 // ---------- Shop query (for test-auth) ----------
 
 export async function queryShop(): Promise<{ name: string; myshopifyDomain: string }> {
@@ -151,6 +238,15 @@ export async function pushProduct(
         productType: details.productType ?? "",
         tags: details.tags ?? [],
         status: details.status ?? "DRAFT",
+        ...(details.handle ? { handle: details.handle } : {}),
+        ...(details.seoTitle || details.seoDescription
+          ? {
+              seo: {
+                ...(details.seoTitle ? { title: details.seoTitle } : {}),
+                ...(details.seoDescription ? { description: details.seoDescription } : {}),
+              },
+            }
+          : {}),
       },
     }
   );
@@ -200,11 +296,19 @@ export async function pushProduct(
 
     const variantErrors = variantData.productVariantsBulkUpdate.userErrors;
     if (variantErrors.length > 0) {
-      console.error(
-        "[shopify-admin] Variant price update errors:",
-        variantErrors.map((e) => e.message).join("; ")
-      );
+      const msg = variantErrors.map((e) => e.message).join("; ");
+      console.error("[shopify-admin] Variant price update FAILED:", msg);
+      throw new Error(`Shopify rejected price ${details.priceGBP}: ${msg}`);
     }
+
+    const updatedVariant = variantData.productVariantsBulkUpdate.productVariants?.[0];
+    console.log(
+      `[shopify-admin] Variant ${defaultVariantId} priced at ${updatedVariant?.price ?? "?"}`
+    );
+  } else if (details.priceGBP && !defaultVariantId) {
+    console.warn(
+      `[shopify-admin] priceGBP=${details.priceGBP} provided but no default variant returned from productCreate. Price NOT set.`
+    );
   }
 
   // 2. Upload images
@@ -214,7 +318,7 @@ export async function pushProduct(
     onProgress?.(`A fazer upload da imagem ${i + 1} de ${libraryItemIds.length}...`);
 
     try {
-      await uploadImageToProduct(productGid, itemId);
+      await uploadImageToProduct(productGid, itemId, details.imageAltText);
       imagesUploaded++;
     } catch (err) {
       console.error(
@@ -222,6 +326,37 @@ export async function pushProduct(
         err instanceof Error ? err.message : err
       );
       // Continue with other images
+    }
+  }
+
+  // 3. Publish to sales channels — critical, otherwise the storefront returns 404
+  const publishMode = details.publishMode ?? "online-store";
+  if (publishMode !== "none") {
+    onProgress?.("A publicar nos canais de venda...");
+    try {
+      const allPubs = await listPublications();
+      const chosen = selectPublicationsForMode(allPubs, publishMode);
+      if (chosen.length === 0) {
+        console.warn(
+          `[shopify-admin] publishMode=${publishMode} but no matching publications found. Available: ${allPubs.map((p) => p.name).join(", ") || "(none)"}`
+        );
+      } else {
+        const { publishedCount, errors } = await publishProductToChannels(
+          productGid,
+          chosen.map((p) => p.id)
+        );
+        console.log(
+          `[shopify-admin] Published ${productGid} to ${publishedCount}/${chosen.length} channel(s): ${chosen.map((c) => c.name).join(", ")}`
+        );
+        if (errors.length > 0) {
+          console.warn(`[shopify-admin] Publish errors: ${errors.join("; ")}`);
+        }
+      }
+    } catch (pubErr) {
+      // Non-fatal — product is created, just not visible on the storefront.
+      // The user will see the product in admin and can publish manually.
+      const msg = pubErr instanceof Error ? pubErr.message : "Publish failed";
+      console.error(`[shopify-admin] Channel publish failed for ${productGid}: ${msg}`);
     }
   }
 
@@ -244,7 +379,8 @@ export async function pushProduct(
 
 async function uploadImageToProduct(
   productGid: string,
-  libraryItemId: string
+  libraryItemId: string,
+  altOverride?: string
 ): Promise<void> {
   const item = await getItem(libraryItemId);
   if (!item) throw new Error(`Library item ${libraryItemId} not found`);
@@ -351,7 +487,7 @@ async function uploadImageToProduct(
         {
           originalSource: target.resourceUrl,
           mediaContentType: "IMAGE",
-          alt: item.notes ?? "Product image",
+          alt: altOverride ?? item.notes ?? "Product image",
         },
       ],
     }

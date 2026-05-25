@@ -8,7 +8,21 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  let body: { name?: string; domain?: string; client_id?: string; client_secret?: string };
+  let body: {
+    name?: string;
+    domain?: string;
+    client_id?: string;
+    client_secret?: string;
+    brand_brief?: string | null;
+    niche?: string | null;
+    target_audience?: string | null;
+    brand_voice?: string | null;
+    value_props?: string | null;
+    default_language?: string | null;
+    currency?: string | null;
+    logo_url?: string | null;
+    brand_short_name?: string | null;
+  };
   try {
     body = await req.json();
   } catch {

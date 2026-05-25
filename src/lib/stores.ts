@@ -21,6 +21,25 @@ export interface Store {
   character_reference_url: string | null;
   character_description: string | null;
   gallery_default_count: number;
+  // ── Brand / SEO intelligence ────────────────────────────
+  /** What the store sells, in one paragraph. The AI uses this to anchor titles + descriptions. */
+  brand_brief: string | null;
+  /** Comma-separated list of niches/categories (e.g. "luxury watches, men's fashion"). */
+  niche: string | null;
+  /** Target audience description (age, lifestyle, motivations, pain points). */
+  target_audience: string | null;
+  /** Brand voice / tone-of-voice (e.g. "Confident, succinct, premium. No hype words."). */
+  brand_voice: string | null;
+  /** Key value propositions / what differentiates the store. */
+  value_props: string | null;
+  /** Default language for new product copy (ISO 639-1 like "pt", "en"). */
+  default_language: string | null;
+  /** Currency symbol or code (e.g. "£", "EUR"). Default "£" for backwards compatibility. */
+  currency: string | null;
+  /** Vercel Blob URL for the store's logo image (PNG with alpha recommended). */
+  logo_url: string | null;
+  /** Short brand text used as a fallback watermark when no logo exists, or as the store URL on the watermark strip. */
+  brand_short_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +59,15 @@ export interface UpdateStoreInput {
   character_reference_url?: string | null;
   character_description?: string | null;
   gallery_default_count?: number;
+  brand_brief?: string | null;
+  niche?: string | null;
+  target_audience?: string | null;
+  brand_voice?: string | null;
+  value_props?: string | null;
+  default_language?: string | null;
+  currency?: string | null;
+  logo_url?: string | null;
+  brand_short_name?: string | null;
 }
 
 // ---------- Backend detection ----------
@@ -79,12 +107,26 @@ const ALTER_STORES_GALLERY_PG = `
     ADD COLUMN IF NOT EXISTS gallery_default_count INT DEFAULT 4
 `;
 
+const ALTER_STORES_BRAND_PG = `
+  ALTER TABLE stores
+    ADD COLUMN IF NOT EXISTS brand_brief TEXT,
+    ADD COLUMN IF NOT EXISTS niche TEXT,
+    ADD COLUMN IF NOT EXISTS target_audience TEXT,
+    ADD COLUMN IF NOT EXISTS brand_voice TEXT,
+    ADD COLUMN IF NOT EXISTS value_props TEXT,
+    ADD COLUMN IF NOT EXISTS default_language TEXT,
+    ADD COLUMN IF NOT EXISTS currency TEXT,
+    ADD COLUMN IF NOT EXISTS logo_url TEXT,
+    ADD COLUMN IF NOT EXISTS brand_short_name TEXT
+`;
+
 async function ensurePgStoresSchema(): Promise<void> {
   if (_pgStoresMigrated) return;
   const { sql } = await import("@vercel/postgres");
   await sql.query(CREATE_STORES_TABLE_PG);
   await sql.query(CREATE_ACTIVE_INDEX_PG);
   await sql.query(ALTER_STORES_GALLERY_PG);
+  await sql.query(ALTER_STORES_BRAND_PG);
   _pgStoresMigrated = true;
 }
 
@@ -124,6 +166,15 @@ function rowToStore(row: Record<string, unknown>): Store {
     character_reference_url: row.character_reference_url ? String(row.character_reference_url) : null,
     character_description: row.character_description ? String(row.character_description) : null,
     gallery_default_count: Number(row.gallery_default_count ?? 4),
+    brand_brief: row.brand_brief ? String(row.brand_brief) : null,
+    niche: row.niche ? String(row.niche) : null,
+    target_audience: row.target_audience ? String(row.target_audience) : null,
+    brand_voice: row.brand_voice ? String(row.brand_voice) : null,
+    value_props: row.value_props ? String(row.value_props) : null,
+    default_language: row.default_language ? String(row.default_language) : null,
+    currency: row.currency ? String(row.currency) : null,
+    logo_url: row.logo_url ? String(row.logo_url) : null,
+    brand_short_name: row.brand_short_name ? String(row.brand_short_name) : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -198,6 +249,15 @@ export async function createStore(input: CreateStoreInput): Promise<Store> {
     character_reference_url: null,
     character_description: null,
     gallery_default_count: 4,
+    brand_brief: null,
+    niche: null,
+    target_audience: null,
+    brand_voice: null,
+    value_props: null,
+    default_language: null,
+    currency: null,
+    logo_url: null,
+    brand_short_name: null,
     created_at: now,
     updated_at: now,
   };
@@ -250,6 +310,42 @@ export async function updateStore(
       sets.push(`gallery_default_count = $${idx++}`);
       values.push(input.gallery_default_count);
     }
+    if (input.brand_brief !== undefined) {
+      sets.push(`brand_brief = $${idx++}`);
+      values.push(input.brand_brief);
+    }
+    if (input.niche !== undefined) {
+      sets.push(`niche = $${idx++}`);
+      values.push(input.niche);
+    }
+    if (input.target_audience !== undefined) {
+      sets.push(`target_audience = $${idx++}`);
+      values.push(input.target_audience);
+    }
+    if (input.brand_voice !== undefined) {
+      sets.push(`brand_voice = $${idx++}`);
+      values.push(input.brand_voice);
+    }
+    if (input.value_props !== undefined) {
+      sets.push(`value_props = $${idx++}`);
+      values.push(input.value_props);
+    }
+    if (input.default_language !== undefined) {
+      sets.push(`default_language = $${idx++}`);
+      values.push(input.default_language);
+    }
+    if (input.currency !== undefined) {
+      sets.push(`currency = $${idx++}`);
+      values.push(input.currency);
+    }
+    if (input.logo_url !== undefined) {
+      sets.push(`logo_url = $${idx++}`);
+      values.push(input.logo_url);
+    }
+    if (input.brand_short_name !== undefined) {
+      sets.push(`brand_short_name = $${idx++}`);
+      values.push(input.brand_short_name);
+    }
 
     values.push(id);
     const result = await sql.query(
@@ -280,6 +376,15 @@ export async function updateStore(
   if (input.character_reference_url !== undefined) store.character_reference_url = input.character_reference_url;
   if (input.character_description !== undefined) store.character_description = input.character_description;
   if (input.gallery_default_count !== undefined) store.gallery_default_count = input.gallery_default_count;
+  if (input.brand_brief !== undefined) store.brand_brief = input.brand_brief;
+  if (input.niche !== undefined) store.niche = input.niche;
+  if (input.target_audience !== undefined) store.target_audience = input.target_audience;
+  if (input.brand_voice !== undefined) store.brand_voice = input.brand_voice;
+  if (input.value_props !== undefined) store.value_props = input.value_props;
+  if (input.default_language !== undefined) store.default_language = input.default_language;
+  if (input.currency !== undefined) store.currency = input.currency;
+  if (input.logo_url !== undefined) store.logo_url = input.logo_url;
+  if (input.brand_short_name !== undefined) store.brand_short_name = input.brand_short_name;
   store.updated_at = new Date().toISOString();
   stores[idx] = store;
   fileWriteStores(stores);

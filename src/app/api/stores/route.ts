@@ -8,7 +8,7 @@ export async function GET() {
   await ensureMigrations();
   try {
     const stores = await listStores();
-    // Strip secrets from list response
+    // Strip secrets from list response (keep brand fields for the settings UI)
     const safe = stores.map(({ client_secret, access_token, ...rest }) => ({
       ...rest,
       has_secret: !!client_secret,

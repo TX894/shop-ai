@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { translateText } from "@/lib/translation-service";
+import { loadActiveStoreContext } from "@/lib/store-context";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "text and targetLang required" }, { status: 400 });
   }
   try {
-    const translated = await translateText(body.text, body.targetLang);
+    const ctx = await loadActiveStoreContext();
+    const translated = await translateText(body.text, body.targetLang, ctx);
     return NextResponse.json({ translated });
   } catch (err) {
     return NextResponse.json(
